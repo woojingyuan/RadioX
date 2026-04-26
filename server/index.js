@@ -7,6 +7,7 @@ const ROOT = path.join(__dirname, "..");
 const PUBLIC_DIR = path.join(ROOT, "public");
 const DATA_DIR = path.join(ROOT, "data");
 const PORT = Number(process.env.PORT || 8765);
+const STATION_TIME_ZONE = process.env.RADIOX_TIME_ZONE || "Asia/Tokyo";
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -27,6 +28,15 @@ function writeJson(fileName, value) {
   fs.writeFileSync(path.join(DATA_DIR, fileName), `${JSON.stringify(value, null, 2)}\n`);
 }
 
+function localDateKey(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: STATION_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(date);
+}
+
 function nowParts(date = new Date()) {
   const hour = date.getHours();
   let dayPart = "deep-night";
@@ -37,6 +47,7 @@ function nowParts(date = new Date()) {
 
   return {
     iso: date.toISOString(),
+    dateKey: localDateKey(date),
     hour,
     minute: date.getMinutes(),
     dayPart,
@@ -62,6 +73,8 @@ function normalizeTerm(value) {
 function scheduleTags(planText) {
   const text = normalizeTerm(planText);
   const tags = [];
+  if (/(孩子|小孩|儿童|亲子|游乐园|公园|动物园|family|kids|playground|amusement)/i.test(text)) tags.push("family");
+  if (/(开心|高兴|快乐|愉快|满足|好玩|happy|fun|joy)/i.test(text)) tags.push("bright");
   if (/(meeting|call|会议|会|面谈|客户|review|汇报)/i.test(text)) tags.push("meetings");
   if (/(run|gym|运动|跑步|健身|骑行|walk|训练)/i.test(text)) tags.push("training");
   if (/(deadline|ship|发布|交付|ddl|写|coding|code|深度|专注)/i.test(text)) tags.push("focus");
@@ -70,13 +83,18 @@ function scheduleTags(planText) {
   return tags.length ? tags : ["open"];
 }
 
+function freshManualContext(state, now) {
+  return state.contextDate === now.dateKey;
+}
+
 function contextVector(state, routines) {
   const now = nowParts();
   const today = routines.days[now.weekday] || routines.default;
-  const plan = state.planText || today.planText || routines.default.planText;
-  const weather = state.weather || today.weather || routines.default.weather;
-  const mood = state.mood || today.mood || routines.default.mood;
-  const intensity = Number(state.intensity ?? today.intensity ?? routines.default.intensity);
+  const useManual = freshManualContext(state, now);
+  const plan = useManual && state.planText ? state.planText : today.planText || routines.default.planText;
+  const weather = useManual && state.weather ? state.weather : today.weather || routines.default.weather;
+  const mood = useManual && state.mood ? state.mood : today.mood || routines.default.mood;
+  const intensity = Number(useManual && state.intensity != null ? state.intensity : today.intensity ?? routines.default.intensity);
 
   return {
     now,
@@ -93,6 +111,95 @@ function overlaps(a, b) {
   return (a || []).some((item) => right.has(normalizeTerm(item)));
 }
 
+function hasGenre(track, genres) {
+  return overlaps(track.genres, genres);
+}
+
+function contextTargetEnergy(context) {
+  let target = {
+    breath: 25,
+    focus: 45,
+    blue: 32,
+    recover: 22,
+    drive: 68,
+    fire: 84
+  }[context.mood] || 50;
+
+  if (context.scheduleTags.includes("family")) target = Math.max(target, 46);
+  if (context.scheduleTags.includes("bright")) target = Math.max(target, 50);
+  if (context.scheduleTags.includes("recovery") && context.scheduleTags.includes("bright")) {
+    target = Math.max(42, Math.min(target, 52));
+  }
+
+  return clamp(target + (context.intensity - 3) * 5, 15, 88);
+}
+
+function stableHash(value) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function dailyRotation(track, context) {
+  const hash = stableHash(`${context.now.dateKey}:${track.id}`);
+  return Math.round(((hash % 1000) / 1000) * 70) / 10;
+}
+
+function contextSignature(context) {
+  return String(stableHash([
+    context.now.dateKey,
+    context.now.dayPart,
+    context.weather,
+    context.mood,
+    context.intensity,
+    context.planText,
+    context.scheduleTags.join(",")
+  ].join("|")));
+}
+
+function recentPenalty(track, state) {
+  const history = state.history || [];
+  const lastIndex = history.lastIndexOf(track.id);
+  if (lastIndex === -1) return 0;
+  const distance = history.length - 1 - lastIndex;
+  if (distance <= 2) return 36;
+  if (distance <= 8) return 28;
+  return 20;
+}
+
+function artistKey(artist) {
+  return normalizeTerm(artist)
+    .replace(/\s*&.*$/, "")
+    .replace(/[^a-z0-9\u3040-\u30ff\u3400-\u9fff]+/g, " ")
+    .trim();
+}
+
+function diversify(scored, limit) {
+  const selected = [];
+  const selectedIds = new Set();
+  const artistCounts = new Map();
+
+  for (const track of scored) {
+    const key = artistKey(track.artist);
+    if ((artistCounts.get(key) || 0) >= 1) continue;
+    selected.push(track);
+    selectedIds.add(track.id);
+    artistCounts.set(key, (artistCounts.get(key) || 0) + 1);
+    if (selected.length >= limit) return selected;
+  }
+
+  for (const track of scored) {
+    if (selectedIds.has(track.id)) continue;
+    selected.push(track);
+    if (selected.length >= limit) return selected;
+  }
+
+  return selected;
+}
+
 function scoreTrack(track, context, profile) {
   let score = 0;
   if (track.moods?.includes(context.mood)) score += 26;
@@ -106,14 +213,7 @@ function scoreTrack(track, context, profile) {
   }, 0);
   score += genreAffinity;
 
-  const targetEnergy = {
-    breath: 25,
-    focus: 45,
-    blue: 32,
-    recover: 22,
-    drive: 68,
-    fire: 84
-  }[context.mood] || 50;
+  const targetEnergy = contextTargetEnergy(context);
   score += Math.max(0, 18 - Math.abs((track.energy || 50) - targetEnergy) / 4);
 
   const eraBias = profile.eraBias?.[track.era] || 0;
@@ -124,23 +224,72 @@ function scoreTrack(track, context, profile) {
   if (context.now.dayPart === "deep-night" && (track.energy || 100) > 78) score -= 16;
   if (context.weather === "rain" && (track.genres || []).includes("jazz")) score += 5;
   if (context.weather === "clear" && (track.genres || []).includes("classic-rock")) score += 4;
+  if (context.scheduleTags.includes("family") && hasGenre(track, ["classic-rock", "folk-rock", "j-rock", "mandarin-rock", "pop-vocal"])) score += 8;
+  if (context.scheduleTags.includes("family") && hasGenre(track, ["metal", "hard-rock"]) && (track.energy || 0) > 78) score -= 6;
+  if (context.scheduleTags.includes("bright") && hasGenre(track, ["classic-rock", "folk-rock", "j-rock", "mandarin-rock", "pop-vocal"])) score += 7;
+  if (context.scheduleTags.includes("bright") && (track.energy || 0) >= 42 && (track.energy || 0) <= 78) score += 5;
+  if (context.scheduleTags.includes("recovery") && context.scheduleTags.includes("bright")) {
+    if ((track.energy || 0) < 30) score -= 5;
+    if ((track.energy || 0) >= 35 && (track.energy || 0) <= 60) score += 5;
+  }
 
   return Math.round(score * 10) / 10;
 }
 
+function decorateTrack(track, context, profile, state) {
+  return {
+    ...track,
+    score: scoreTrack(track, context, profile) + dailyRotation(track, context) - recentPenalty(track, state),
+    reason: makeReason(track, context)
+  };
+}
+
 function recommend(profile, catalog, context, state) {
-  const history = new Set((state.history || []).slice(-12));
-  return catalog
-    .map((track) => {
-      const score = scoreTrack(track, context, profile) - (history.has(track.id) ? 18 : 0);
-      return {
-        ...track,
-        score,
-        reason: makeReason(track, context)
-      };
-    })
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 10);
+  const scored = catalog
+    .map((track) => decorateTrack(track, context, profile, state))
+    .sort((a, b) => b.score - a.score);
+  return diversify(scored, 10);
+}
+
+function queueFromOrder(order, catalog, context, profile, state) {
+  const byId = new Map(catalog.map((track) => [track.id, track]));
+  return (order || [])
+    .map((id) => byId.get(id))
+    .filter(Boolean)
+    .map((track) => decorateTrack(track, context, profile, state));
+}
+
+function resolveQueue(profile, catalog, context, state) {
+  const signature = contextSignature(context);
+  const generated = recommend(profile, catalog, context, state);
+  const savedOrder = Array.isArray(state.queueOrder) ? state.queueOrder : [];
+  const canUseSaved = state.queueDate === context.now.dateKey
+    && state.queueSignature === signature
+    && savedOrder.length > 0;
+
+  if (!canUseSaved) {
+    const queue = generated;
+    return {
+      queue,
+      order: queue.map((track) => track.id),
+      signature,
+      stale: true
+    };
+  }
+
+  const savedQueue = queueFromOrder(savedOrder, catalog, context, profile, state);
+  const seen = new Set(savedQueue.map((track) => track.id));
+  const filledQueue = [
+    ...savedQueue,
+    ...generated.filter((track) => !seen.has(track.id))
+  ].slice(0, 10);
+
+  return {
+    queue: filledQueue,
+    order: filledQueue.map((track) => track.id),
+    signature,
+    stale: false
+  };
 }
 
 function makeReason(track, context) {
@@ -162,7 +311,15 @@ function makeReason(track, context) {
     fire: "把年轻时那点电流叫回来"
   }[context.mood] || "给现在的状态找一个入口";
 
-  return `${weatherLine}，${moodLine}。${track.artist} 这首歌刚好卡在这个缝里。`;
+  const scheduleLine = context.scheduleTags.includes("family")
+    ? "今天有孩子的喧闹和快乐，歌要温一点，也要有一点亮"
+    : context.scheduleTags.includes("bright")
+      ? "今天的情绪不是低落，是累过之后还有光"
+      : context.scheduleTags.includes("focus")
+        ? "手边的事情需要一个不抢戏的节拍"
+        : "今天不用把状态解释得太满";
+
+  return `${weatherLine}，${moodLine}。${scheduleLine}，${track.artist} 这首歌刚好卡在这个缝里。`;
 }
 
 function makeDjScript(current, context, profile) {
@@ -194,14 +351,28 @@ function makeDjScript(current, context, profile) {
   ];
 }
 
-function stationPayload() {
+function stationPayload(options = {}) {
   const profile = readJson("profile.json");
   const catalog = readJson("playlist-catalog.json");
   const routines = readJson("routines.json");
-  const state = readJson("state.json");
+  let state = readJson("state.json");
   const context = contextVector(state, routines);
-  const queue = recommend(profile, catalog, context, state);
-  const currentIndex = clamp(Number(state.currentIndex || 0), 0, Math.max(queue.length - 1, 0));
+  const queueState = resolveQueue(profile, catalog, context, state);
+  if (options.persistQueue && queueState.stale) {
+    state = {
+      ...state,
+      currentIndex: 0,
+      queueDate: context.now.dateKey,
+      queueSignature: queueState.signature,
+      queueOrder: queueState.order,
+      updatedAt: new Date().toISOString()
+    };
+    writeJson("state.json", state);
+  }
+
+  const queue = queueState.queue;
+  const rawIndex = queueState.stale ? 0 : Number(state.currentIndex || 0);
+  const currentIndex = clamp(rawIndex, 0, Math.max(queue.length - 1, 0));
   const current = queue[currentIndex] || queue[0];
   const transcript = current ? makeDjScript(current, context, profile) : [];
 
@@ -221,6 +392,8 @@ function stationPayload() {
     state: {
       playing: Boolean(state.playing),
       currentIndex,
+      queueOrder: queueState.order,
+      queueSignature: queueState.signature,
       volume: state.volume ?? 76,
       spotifyDeviceId: state.spotifyDeviceId || null
     }
@@ -274,7 +447,7 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === "GET" && url.pathname === "/api/now") {
-    sendJson(res, 200, stationPayload());
+    sendJson(res, 200, stationPayload({ persistQueue: true }));
     return true;
   }
 
@@ -288,10 +461,14 @@ async function handleApi(req, res, url) {
       intensity: body.intensity ?? state.intensity,
       planText: typeof body.planText === "string" ? body.planText : state.planText,
       currentIndex: 0,
+      contextDate: localDateKey(),
+      queueDate: localDateKey(),
+      queueSignature: null,
+      queueOrder: [],
       updatedAt: new Date().toISOString()
     };
     writeJson("state.json", next);
-    sendJson(res, 200, stationPayload());
+    sendJson(res, 200, stationPayload({ persistQueue: true }));
     return true;
   }
 
@@ -305,22 +482,25 @@ async function handleApi(req, res, url) {
       spotifyDeviceId: body.spotifyDeviceId || state.spotifyDeviceId,
       updatedAt: new Date().toISOString()
     });
-    sendJson(res, 200, stationPayload());
+    sendJson(res, 200, stationPayload({ persistQueue: true }));
     return true;
   }
 
   if (req.method === "POST" && url.pathname === "/api/next") {
+    const payload = stationPayload({ persistQueue: true });
     const state = readJson("state.json");
-    const payload = stationPayload();
     const current = payload.current;
     const history = current ? [...(state.history || []), current.id].slice(-30) : state.history || [];
     writeJson("state.json", {
       ...state,
-      currentIndex: Number(state.currentIndex || 0) + 1,
+      currentIndex: Number(payload.state.currentIndex || 0) + 1,
       history,
+      queueDate: localDateKey(),
+      queueSignature: payload.state.queueSignature,
+      queueOrder: payload.state.queueOrder,
       updatedAt: new Date().toISOString()
     });
-    sendJson(res, 200, stationPayload());
+    sendJson(res, 200, stationPayload({ persistQueue: true }));
     return true;
   }
 
@@ -330,9 +510,12 @@ async function handleApi(req, res, url) {
       ...state,
       currentIndex: 0,
       history: [],
+      queueDate: localDateKey(),
+      queueSignature: null,
+      queueOrder: [],
       updatedAt: new Date().toISOString()
     });
-    sendJson(res, 200, stationPayload());
+    sendJson(res, 200, stationPayload({ persistQueue: true }));
     return true;
   }
 

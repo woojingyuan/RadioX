@@ -159,11 +159,11 @@ button {
 }
 
 .hero {
-  min-height: 270px;
+  min-height: 236px;
   position: relative;
-  padding: 34px 24px 0;
+  padding: 28px 24px 0;
   display: grid;
-  align-items: end;
+  align-items: start;
   overflow: hidden;
 }
 
@@ -178,7 +178,12 @@ button {
 .hero-copy {
   position: relative;
   z-index: 1;
-  padding-bottom: 22px;
+  width: fit-content;
+  max-width: min(540px, calc(100% - 18px));
+  padding: 10px 12px 11px;
+  border-left: 2px solid rgba(57, 245, 176, 0.72);
+  background: linear-gradient(90deg, rgba(5, 8, 7, 0.76), rgba(5, 8, 7, 0.2));
+  backdrop-filter: blur(6px);
 }
 
 .eyebrow,
@@ -194,11 +199,11 @@ p {
   margin-top: 0;
 }
 
-h1 {
+#heroLine {
   max-width: 720px;
   margin-bottom: 0;
-  font-size: clamp(44px, 7.6vw, 86px);
-  line-height: 0.92;
+  font-size: clamp(18px, 2.2vw, 26px);
+  line-height: 1.08;
   letter-spacing: 0;
 }
 
@@ -621,8 +626,8 @@ textarea {
   }
 
   .hero {
-    min-height: 190px;
-    padding: 22px 16px 0;
+    min-height: 170px;
+    padding: 18px 16px 0;
   }
 
   #spectrum {
@@ -631,14 +636,14 @@ textarea {
     width: calc(100% - 20px);
   }
 
-  h1 {
-    font-size: 42px;
+  #heroLine {
+    font-size: 22px;
   }
 
   .hero-copy {
-    margin: 0 -16px;
-    padding: 8px 16px 20px;
-    background: linear-gradient(90deg, rgba(5, 8, 7, 0.94), rgba(5, 8, 7, 0.7) 68%, rgba(5, 8, 7, 0));
+    max-width: calc(100% - 8px);
+    padding: 9px 11px 10px;
+    background: linear-gradient(90deg, rgba(5, 8, 7, 0.8), rgba(5, 8, 7, 0.28));
   }
 
   .player-panel {

@@ -151,7 +151,8 @@
           "user-read-private",
           "user-read-playback-state",
           "user-modify-playback-state",
-          "user-read-currently-playing"
+          "user-read-currently-playing",
+          "user-library-modify"
         ].join(" ")
       });
       window.location.href = `https://accounts.spotify.com/authorize?${params.toString()}`;
@@ -320,6 +321,25 @@
         throw new Error(`Spotify play failed: ${response.status}`);
       }
       return track;
+    }
+
+    async saveTrackToLibrary(query) {
+      const token = await this.getAccessToken();
+      const track = await this.searchTrack(query);
+      if (!track?.uri) throw new Error("Track not found on Spotify");
+
+      const endpoint = new URL("https://api.spotify.com/v1/me/library");
+      endpoint.searchParams.set("uris", track.uri);
+      const response = await fetch(endpoint, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.ok || response.status === 200 || response.status === 204) return track;
+      if (response.status === 401 || response.status === 403) {
+        throw new Error("Spotify library permission missing. Please login again.");
+      }
+      throw new Error(`Spotify library save failed: ${response.status}`);
     }
 
     async toggle() {

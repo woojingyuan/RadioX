@@ -4,11 +4,13 @@
   "intensity": 2,
   "planText": "晚上还有一点收尾工作，想保持呼吸，不想太吵。",
   "playing": false,
-  "currentIndex": 1,
+  "currentIndex": 0,
   "volume": 76,
-  "history": [
-    "pink-floyd-wish-you-were-here"
-  ],
+  "history": [],
   "spotifyDeviceId": null,
-  "updatedAt": "2026-04-26T09:08:17.505Z"
+  "contextDate": null,
+  "updatedAt": null,
+  "queueDate": null,
+  "queueSignature": null,
+  "queueOrder": []
 }

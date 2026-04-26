@@ -97,6 +97,51 @@ function saveFavorites() {
   localStorage.setItem("radiox.favorites", JSON.stringify([...app.favorites]));
 }
 
+async function syncFavoriteToSpotify(track) {
+  if (!track || !app.spotify?.configured()) return false;
+  if (!app.spotify.status().authenticated) {
+    els.spotifyButton.textContent = "LOGIN";
+    setServerState("LOGIN");
+    return false;
+  }
+
+  const previousFavText = els.favButton.textContent;
+  const previousSpotifyText = els.spotifyButton.textContent;
+  els.favButton.textContent = "…";
+  els.spotifyButton.textContent = "SAVING";
+  try {
+    const spotifyTrack = await app.spotify.saveTrackToLibrary(track.query);
+    app.spotifyTrack = spotifyTrack;
+    els.favButton.textContent = "♥";
+    els.spotifyButton.textContent = "SAVED";
+    setServerState("SAVED");
+    window.setTimeout(() => {
+      if (els.spotifyButton.textContent === "SAVED") updateSpotifyButton();
+      setServerState("READY");
+    }, 1200);
+    return true;
+  } catch (error) {
+    console.warn(error);
+    els.favButton.textContent = previousFavText;
+    if (/permission|auth|token|401|403/i.test(error.message)) {
+      app.spotify.clearToken();
+      app.spotify.resetPlayer();
+      els.spotifyButton.textContent = "LOGIN";
+      setServerState("LOGIN");
+    } else {
+      els.spotifyButton.textContent = "SAVE ERR";
+      setServerState("RETRY");
+      window.setTimeout(() => {
+        if (els.spotifyButton.textContent === "SAVE ERR") {
+          els.spotifyButton.textContent = previousSpotifyText;
+          updateSpotifyButton();
+        }
+      }, 1600);
+    }
+    return false;
+  }
+}
+
 function heroFromContext(context) {
   const day = context.now.weekday;
   const mood = {
@@ -152,7 +197,7 @@ function render(payload) {
         <b>${escapeHtml(track.title)}</b>
         <span>${escapeHtml(track.artist)}</span>
       </div>
-      <em>${Math.round(track.score)}</em>
+      <em>${String(index + 1).padStart(2, "0")}</em>
     </li>
   `).join("");
 
@@ -588,13 +633,18 @@ function bindEvents() {
     if (app.spotify?.status().authenticated) app.spotify.seek(0).catch(console.warn);
     renderProgress();
   });
-  els.favButton.addEventListener("click", () => {
+  els.favButton.addEventListener("click", async () => {
     const id = app.payload?.current?.id;
     if (!id) return;
-    if (app.favorites.has(id)) app.favorites.delete(id);
-    else app.favorites.add(id);
+    const isFavorite = app.favorites.has(id);
+    if (isFavorite) {
+      app.favorites.delete(id);
+    } else {
+      app.favorites.add(id);
+    }
     saveFavorites();
     els.favButton.textContent = app.favorites.has(id) ? "♥" : "♡";
+    if (!isFavorite) await syncFavoriteToSpotify(app.payload.current);
   });
   els.volume.addEventListener("input", () => {
     app.simAudio?.setVolume(Number(els.volume.value));

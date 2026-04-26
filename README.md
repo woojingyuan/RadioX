@@ -29,6 +29,8 @@ In the app:
 3. Save, then click `LOGIN`.
 4. After Spotify redirects back, press play.
 
+The first time you use Spotify favorites, you may need to log in again because RadioX requests the `user-library-modify` scope to save tracks to your Spotify library.
+
 ## Simulated Audio
 
 When Spotify is not connected, the play button starts a local Web Audio engine. It generates a radio bed from the current track's genre and energy: quiet recommendations lean toward pads/plucks, while rock recommendations add bass and drums. It is intentionally not a copy of the original song.
