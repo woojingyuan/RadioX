@@ -1,0 +1,52 @@
+{
+  "default": {
+    "weather": "clear",
+    "mood": "breath",
+    "intensity": 2,
+    "planText": "上午整理代码，下午两场会议，晚上留一点时间散步。"
+  },
+  "days": {
+    "Monday": {
+      "weather": "clear",
+      "mood": "breath",
+      "intensity": 3,
+      "planText": "三场会议，一次运动，一个买菜任务。"
+    },
+    "Tuesday": {
+      "weather": "cloudy",
+      "mood": "focus",
+      "intensity": 4,
+      "planText": "上午深度工作，下午代码 review，晚上恢复。"
+    },
+    "Wednesday": {
+      "weather": "rain",
+      "mood": "blue",
+      "intensity": 2,
+      "planText": "写文档，处理邮件，晚上听点慢的。"
+    },
+    "Thursday": {
+      "weather": "windy",
+      "mood": "drive",
+      "intensity": 4,
+      "planText": "客户电话，功能交付，晚饭后跑步。"
+    },
+    "Friday": {
+      "weather": "clear",
+      "mood": "fire",
+      "intensity": 5,
+      "planText": "发布前收尾，晚上想听点有电的。"
+    },
+    "Saturday": {
+      "weather": "clear",
+      "mood": "recover",
+      "intensity": 1,
+      "planText": "没有会议，整理房间，做饭，读书。"
+    },
+    "Sunday": {
+      "weather": "cloudy",
+      "mood": "breath",
+      "intensity": 1,
+      "planText": "慢慢醒来，散步，准备下周。"
+    }
+  }
+}

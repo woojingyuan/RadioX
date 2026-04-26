@@ -1,0 +1,376 @@
+const http = require("http");
+const fs = require("fs");
+const path = require("path");
+const { URL } = require("url");
+
+const ROOT = path.join(__dirname, "..");
+const PUBLIC_DIR = path.join(ROOT, "public");
+const DATA_DIR = path.join(ROOT, "data");
+const PORT = Number(process.env.PORT || 8765);
+
+const MIME = {
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
+  ".svg": "image/svg+xml; charset=utf-8",
+  ".png": "image/png",
+  ".ico": "image/x-icon"
+};
+
+function readJson(fileName) {
+  return JSON.parse(fs.readFileSync(path.join(DATA_DIR, fileName), "utf8"));
+}
+
+function writeJson(fileName, value) {
+  fs.writeFileSync(path.join(DATA_DIR, fileName), `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function nowParts(date = new Date()) {
+  const hour = date.getHours();
+  let dayPart = "deep-night";
+  if (hour >= 5 && hour < 10) dayPart = "morning";
+  else if (hour >= 10 && hour < 15) dayPart = "workday";
+  else if (hour >= 15 && hour < 19) dayPart = "dusk";
+  else if (hour >= 19 && hour < 23) dayPart = "night";
+
+  return {
+    iso: date.toISOString(),
+    hour,
+    minute: date.getMinutes(),
+    dayPart,
+    weekday: new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(date),
+    label: new Intl.DateTimeFormat("zh-CN", {
+      weekday: "long",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    }).format(date)
+  };
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function normalizeTerm(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function scheduleTags(planText) {
+  const text = normalizeTerm(planText);
+  const tags = [];
+  if (/(meeting|call|会议|会|面谈|客户|review|汇报)/i.test(text)) tags.push("meetings");
+  if (/(run|gym|运动|跑步|健身|骑行|walk|训练)/i.test(text)) tags.push("training");
+  if (/(deadline|ship|发布|交付|ddl|写|coding|code|深度|专注)/i.test(text)) tags.push("focus");
+  if (/(date|朋友|晚饭|聚|party|演出|live|酒|约)/i.test(text)) tags.push("social");
+  if (/(sleep|休息|冥想|恢复|累|疲惫|低落|焦虑|burnout)/i.test(text)) tags.push("recovery");
+  return tags.length ? tags : ["open"];
+}
+
+function contextVector(state, routines) {
+  const now = nowParts();
+  const today = routines.days[now.weekday] || routines.default;
+  const plan = state.planText || today.planText || routines.default.planText;
+  const weather = state.weather || today.weather || routines.default.weather;
+  const mood = state.mood || today.mood || routines.default.mood;
+  const intensity = Number(state.intensity ?? today.intensity ?? routines.default.intensity);
+
+  return {
+    now,
+    planText: plan,
+    scheduleTags: scheduleTags(plan),
+    weather,
+    mood,
+    intensity: clamp(intensity, 1, 5)
+  };
+}
+
+function overlaps(a, b) {
+  const right = new Set((b || []).map(normalizeTerm));
+  return (a || []).some((item) => right.has(normalizeTerm(item)));
+}
+
+function scoreTrack(track, context, profile) {
+  let score = 0;
+  if (track.moods?.includes(context.mood)) score += 26;
+  if (track.weather?.includes(context.weather)) score += 14;
+  if (track.dayParts?.includes(context.now.dayPart)) score += 14;
+  if (overlaps(track.scheduleTags, context.scheduleTags)) score += 14;
+
+  const genreAffinity = (track.genres || []).reduce((sum, genre) => {
+    const pref = profile.genreWeights[genre] || 0;
+    return sum + pref;
+  }, 0);
+  score += genreAffinity;
+
+  const targetEnergy = {
+    breath: 25,
+    focus: 45,
+    blue: 32,
+    recover: 22,
+    drive: 68,
+    fire: 84
+  }[context.mood] || 50;
+  score += Math.max(0, 18 - Math.abs((track.energy || 50) - targetEnergy) / 4);
+
+  const eraBias = profile.eraBias?.[track.era] || 0;
+  score += eraBias;
+
+  if (context.intensity >= 4 && (track.energy || 0) > 62) score += 8;
+  if (context.intensity <= 2 && (track.energy || 100) < 45) score += 8;
+  if (context.now.dayPart === "deep-night" && (track.energy || 100) > 78) score -= 16;
+  if (context.weather === "rain" && (track.genres || []).includes("jazz")) score += 5;
+  if (context.weather === "clear" && (track.genres || []).includes("classic-rock")) score += 4;
+
+  return Math.round(score * 10) / 10;
+}
+
+function recommend(profile, catalog, context, state) {
+  const history = new Set((state.history || []).slice(-12));
+  return catalog
+    .map((track) => {
+      const score = scoreTrack(track, context, profile) - (history.has(track.id) ? 18 : 0);
+      return {
+        ...track,
+        score,
+        reason: makeReason(track, context)
+      };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10);
+}
+
+function makeReason(track, context) {
+  const weatherLine = {
+    clear: "天气清亮，适合把吉他和人声放在前面",
+    rain: "雨天会把低频和铜管擦得更亮一点",
+    cloudy: "云层压低时，旋律需要留出呼吸",
+    windy: "风大的时候，节奏可以推着你往前走",
+    hot: "热的时候少一点堆叠，多一点律动",
+    cold: "冷空气里，弦乐和布鲁斯会更贴身"
+  }[context.weather] || "今天的空气适合慢慢进入";
+
+  const moodLine = {
+    breath: "让呼吸先落地",
+    focus: "给专注留一个稳定的脉冲",
+    blue: "不急着把情绪拉起来，先陪它待一会儿",
+    recover: "把一天的噪声往后推",
+    drive: "需要一点向前的推力",
+    fire: "把年轻时那点电流叫回来"
+  }[context.mood] || "给现在的状态找一个入口";
+
+  return `${weatherLine}，${moodLine}。${track.artist} 这首歌刚好卡在这个缝里。`;
+}
+
+function makeDjScript(current, context, profile) {
+  const plan = context.planText.replace(/\s+/g, " ").slice(0, 90);
+  const artistEcho = current.artist.includes("Linkin Park")
+    ? "这名字对你不是算法，是旧火种。"
+    : current.genres.includes("classical")
+      ? "这不是退烧，是把注意力重新调音。"
+      : current.genres.includes("jazz")
+        ? "让鼓刷和贝斯替你把边界画出来。"
+        : "这段不需要解释太多，让第一句自己开门。";
+
+  return [
+    {
+      by: profile.djName,
+      at: "now",
+      text: `现在是${context.now.label}。${profile.nickname}，我看见今天的关键词是：${plan || "留白"}。`
+    },
+    {
+      by: profile.djName,
+      at: "+04s",
+      text: `${current.title}，${current.artist}。${current.reason}`
+    },
+    {
+      by: profile.djName,
+      at: "+11s",
+      text: `${artistEcho} 接下来 ${Math.round(current.energy)}% 的能量，不吵，但会把你带起来。`
+    }
+  ];
+}
+
+function stationPayload() {
+  const profile = readJson("profile.json");
+  const catalog = readJson("playlist-catalog.json");
+  const routines = readJson("routines.json");
+  const state = readJson("state.json");
+  const context = contextVector(state, routines);
+  const queue = recommend(profile, catalog, context, state);
+  const currentIndex = clamp(Number(state.currentIndex || 0), 0, Math.max(queue.length - 1, 0));
+  const current = queue[currentIndex] || queue[0];
+  const transcript = current ? makeDjScript(current, context, profile) : [];
+
+  return {
+    station: {
+      name: profile.stationName,
+      djName: profile.djName,
+      nickname: profile.nickname,
+      onAir: true,
+      listenerCount: 1
+    },
+    profile,
+    context,
+    current,
+    queue,
+    transcript,
+    state: {
+      playing: Boolean(state.playing),
+      currentIndex,
+      volume: state.volume ?? 76,
+      spotifyDeviceId: state.spotifyDeviceId || null
+    }
+  };
+}
+
+function send(res, status, body, headers = {}) {
+  const payload = typeof body === "string" || Buffer.isBuffer(body) ? body : JSON.stringify(body);
+  res.writeHead(status, {
+    "Cache-Control": "no-store",
+    ...headers
+  });
+  res.end(payload);
+}
+
+function sendJson(res, status, body) {
+  send(res, status, body, { "Content-Type": "application/json; charset=utf-8" });
+}
+
+function parseBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk;
+      if (body.length > 1024 * 1024) {
+        reject(new Error("Body too large"));
+        req.destroy();
+      }
+    });
+    req.on("end", () => {
+      if (!body) {
+        resolve({});
+        return;
+      }
+      try {
+        resolve(JSON.parse(body));
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+}
+
+async function handleApi(req, res, url) {
+  if (req.method === "GET" && url.pathname === "/api/config") {
+    sendJson(res, 200, {
+      spotifyClientId: process.env.SPOTIFY_CLIENT_ID || "",
+      spotifyRedirectUri: process.env.SPOTIFY_REDIRECT_URI || `http://127.0.0.1:${PORT}/callback`
+    });
+    return true;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/now") {
+    sendJson(res, 200, stationPayload());
+    return true;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/context") {
+    const body = await parseBody(req);
+    const state = readJson("state.json");
+    const next = {
+      ...state,
+      mood: body.mood || state.mood,
+      weather: body.weather || state.weather,
+      intensity: body.intensity ?? state.intensity,
+      planText: typeof body.planText === "string" ? body.planText : state.planText,
+      currentIndex: 0,
+      updatedAt: new Date().toISOString()
+    };
+    writeJson("state.json", next);
+    sendJson(res, 200, stationPayload());
+    return true;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/play-state") {
+    const body = await parseBody(req);
+    const state = readJson("state.json");
+    writeJson("state.json", {
+      ...state,
+      playing: Boolean(body.playing),
+      volume: body.volume ?? state.volume,
+      spotifyDeviceId: body.spotifyDeviceId || state.spotifyDeviceId,
+      updatedAt: new Date().toISOString()
+    });
+    sendJson(res, 200, stationPayload());
+    return true;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/next") {
+    const state = readJson("state.json");
+    const payload = stationPayload();
+    const current = payload.current;
+    const history = current ? [...(state.history || []), current.id].slice(-30) : state.history || [];
+    writeJson("state.json", {
+      ...state,
+      currentIndex: Number(state.currentIndex || 0) + 1,
+      history,
+      updatedAt: new Date().toISOString()
+    });
+    sendJson(res, 200, stationPayload());
+    return true;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/reset") {
+    const state = readJson("state.json");
+    writeJson("state.json", {
+      ...state,
+      currentIndex: 0,
+      history: [],
+      updatedAt: new Date().toISOString()
+    });
+    sendJson(res, 200, stationPayload());
+    return true;
+  }
+
+  return false;
+}
+
+function safeStaticPath(urlPathname) {
+  const cleanPath = decodeURIComponent(urlPathname === "/" ? "/index.html" : urlPathname);
+  const filePath = path.normalize(path.join(PUBLIC_DIR, cleanPath));
+  if (!filePath.startsWith(PUBLIC_DIR)) return null;
+  return filePath;
+}
+
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  try {
+    if (url.pathname.startsWith("/api/")) {
+      const handled = await handleApi(req, res, url);
+      if (!handled) sendJson(res, 404, { error: "Not found" });
+      return;
+    }
+
+    const filePath = safeStaticPath(url.pathname);
+    const candidate = filePath && fs.existsSync(filePath) && fs.statSync(filePath).isFile()
+      ? filePath
+      : path.join(PUBLIC_DIR, "index.html");
+    const ext = path.extname(candidate);
+    const content = fs.readFileSync(candidate);
+    send(res, 200, content, {
+      "Content-Type": MIME[ext] || "application/octet-stream",
+      "Cache-Control": ext === ".html" ? "no-store" : "public, max-age=300"
+    });
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+  }
+});
+
+server.listen(PORT, () => {
+  console.log(`RadioX Server listening on http://127.0.0.1:${PORT}`);
+  console.log("connected to local taste / schedule / Spotify bridge");
+});
