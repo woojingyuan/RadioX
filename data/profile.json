@@ -49,5 +49,15 @@
     "young-fire": 7,
     "middle-calm": 12,
     "late-night-wisdom": 16
+  },
+  "timePreferences": {
+    "night": {
+      "genres": ["classical", "jazz", "blues", "neo-classical"],
+      "boost": 18
+    },
+    "deep-night": {
+      "genres": ["classical", "jazz", "blues", "neo-classical"],
+      "boost": 22
+    }
   }
 }

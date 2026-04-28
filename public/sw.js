@@ -1,4 +1,4 @@
-const CACHE_NAME = "radiox-v14";
+const CACHE_NAME = "radiox-v33";
 const ASSETS = [
   "/",
   "/index.html",

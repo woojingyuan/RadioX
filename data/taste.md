@@ -8,6 +8,7 @@ Current gravity:
 - Classical, blues, jazz
 - Music that breathes before it explains itself
 - Late-night guitar, piano, smoky brass, quiet drums
+- Evening preference: at night and deep night, lean clearly toward classical, jazz, and blues before rock, unless the mood explicitly asks for fire or drive.
 
 Chinese / Japanese anchors:
 - Ado, いきものがかり

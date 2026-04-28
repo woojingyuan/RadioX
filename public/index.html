@@ -53,59 +53,36 @@
           </div>
 
           <div class="transport">
-            <button class="icon-button" id="prevButton" type="button" title="Restart" aria-label="Restart">↺</button>
+            <button class="icon-button" id="prevButton" type="button" title="Previous track" aria-label="Previous track">⏮</button>
             <button class="icon-button" id="nextButton" type="button" title="Next track" aria-label="Next track">⏭</button>
             <button class="icon-button" id="favButton" type="button" title="Favorite" aria-label="Favorite">♡</button>
             <label class="volume" title="Volume">
               <span>VOL</span>
               <input id="volume" type="range" min="0" max="100" value="76" aria-label="Volume">
             </label>
+            <button class="pill-button" id="voiceButton" type="button">VOICE ON</button>
             <button class="pill-button" id="spotifyButton" type="button">SPOTIFY</button>
           </div>
         </section>
 
-        <section class="chat-panel" aria-label="DJ transcript">
+        <section class="chat-panel" aria-label="DJ output">
           <div class="panel-head">
             <span class="live-dot"></span>
             <span>RadioX</span>
             <strong>LIVE</strong>
           </div>
           <div id="transcript" class="transcript"></div>
-          <form id="contextForm" class="context-form">
-            <div class="control-grid">
-              <label>
-                <span>MOOD</span>
-                <select id="mood">
-                  <option value="breath">breath</option>
-                  <option value="focus">focus</option>
-                  <option value="blue">blue</option>
-                  <option value="recover">recover</option>
-                  <option value="drive">drive</option>
-                  <option value="fire">fire</option>
-                </select>
-              </label>
-              <label>
-                <span>WEATHER</span>
-                <select id="weather">
-                  <option value="clear">clear</option>
-                  <option value="rain">rain</option>
-                  <option value="cloudy">cloudy</option>
-                  <option value="windy">windy</option>
-                  <option value="hot">hot</option>
-                  <option value="cold">cold</option>
-                </select>
-              </label>
-              <label>
-                <span>INTENSITY</span>
-                <input id="intensity" type="range" min="1" max="5" value="2">
-              </label>
+          <section class="dj-chat" aria-label="Conversation with RadioX">
+            <div class="dj-chat-head">
+              <span>ASK THE DJ</span>
+              <strong>MEMORY ON</strong>
             </div>
-            <label class="plan-field">
-              <span>TODAY</span>
-              <textarea id="planText" rows="2"></textarea>
-            </label>
-            <button class="send-button" type="submit">RETUNE</button>
-          </form>
+            <div id="djChatLog" class="dj-chat-log" aria-live="polite"></div>
+            <form id="djChatForm" class="dj-chat-form">
+              <input id="djChatInput" type="text" autocomplete="off" placeholder="跟 DJ 说点什么..." aria-label="Message RadioX">
+              <button class="icon-button" type="submit" title="Send message" aria-label="Send message">↗</button>
+            </form>
+          </section>
         </section>
       </section>
 

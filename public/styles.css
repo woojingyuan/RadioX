@@ -324,6 +324,11 @@ input[type="range"] {
   min-width: 92px;
 }
 
+.pill-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 .pill-button.connected {
   color: #05100b;
   background: var(--accent);
@@ -357,75 +362,146 @@ input[type="range"] {
 }
 
 .transcript {
-  display: grid;
-  gap: 12px;
   margin: 8px 0 18px;
 }
 
-.line {
-  display: grid;
-  grid-template-columns: 54px 1fr;
-  gap: 12px;
-  align-items: start;
-}
-
-.line time {
-  color: var(--muted);
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 12px;
-}
-
-.bubble {
-  max-width: 680px;
-  padding: 14px 16px;
-  color: var(--ink);
-  background: rgba(0, 0, 0, 0.72);
-  border: 1px solid rgba(247, 244, 232, 0.1);
+.dj-output-box {
+  border: 1px solid rgba(57, 245, 176, 0.22);
   border-radius: var(--radius);
-  line-height: 1.5;
+  background: rgba(0, 0, 0, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(247, 244, 232, 0.04);
+  overflow: hidden;
 }
 
-.context-form {
-  display: grid;
-  gap: 12px;
-}
-
-.control-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+.dj-output-toolbar {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
   gap: 10px;
+  padding: 0 14px;
+  color: var(--muted);
+  border-bottom: 1px solid rgba(247, 244, 232, 0.08);
+  background: rgba(57, 245, 176, 0.06);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0;
 }
 
-.context-form label {
+.dj-output-toolbar strong {
+  margin-left: auto;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.dj-output-copy {
+  min-height: 150px;
+  max-height: 280px;
+  padding: 16px;
+  color: var(--ink);
+  overflow-y: auto;
+  line-height: 1.7;
+}
+
+.dj-output-copy p {
+  margin: 0 0 12px;
+}
+
+.dj-output-copy p:last-child {
+  margin-bottom: 0;
+}
+
+.dj-chat {
   display: grid;
-  gap: 6px;
+  gap: 10px;
+  margin: 0;
 }
 
-.context-form label span {
+.dj-chat-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   color: var(--muted);
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 11px;
 }
 
-select,
-textarea,
-.context-form input[type="range"] {
-  width: 100%;
+.dj-chat-head strong {
+  margin-left: auto;
+  color: var(--accent);
+  font-size: 10px;
+}
+
+.dj-chat-log {
+  max-height: min(42vh, 430px);
+  min-height: 190px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 12px;
+  overflow-y: auto;
+  border: 1px solid rgba(247, 244, 232, 0.1);
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.dj-chat-log:empty::before {
+  content: "老朋友，问我这首歌、今天的状态，或者让队列换个方向。";
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.dj-message {
+  max-width: min(100%, 720px);
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid rgba(247, 244, 232, 0.08);
+  border-radius: var(--radius);
+  background: rgba(247, 244, 232, 0.05);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.dj-message.user {
+  justify-self: end;
+  border-color: rgba(57, 245, 176, 0.22);
+  background: rgba(57, 245, 176, 0.1);
+}
+
+.dj-message.assistant {
+  justify-self: start;
+}
+
+.dj-message small {
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.dj-message p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow: visible;
+}
+
+.dj-chat-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  gap: 8px;
+}
+
+.dj-chat-form input {
+  min-width: 0;
+  height: 44px;
+  padding: 0 12px;
   color: var(--ink);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: rgba(0, 0, 0, 0.62);
-}
-
-select {
-  height: 42px;
-  padding: 0 10px;
-}
-
-textarea {
-  resize: vertical;
-  min-height: 54px;
-  padding: 12px;
 }
 
 .send-button {
@@ -502,6 +578,13 @@ textarea {
   border-radius: var(--radius);
   border: 1px solid var(--line);
   background: rgba(247, 244, 232, 0.04);
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.queue li:hover {
+  border-color: rgba(57, 245, 176, 0.34);
+  background: rgba(57, 245, 176, 0.06);
 }
 
 .queue li.active {
@@ -519,6 +602,15 @@ textarea {
   color: var(--muted);
   font-size: 12px;
   font-style: normal;
+}
+
+.queue small {
+  display: block;
+  margin-top: 6px;
+  color: rgba(247, 244, 232, 0.62);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .chips {
@@ -652,10 +744,6 @@ textarea {
 
   .track-row h2 {
     font-size: 31px;
-  }
-
-  .control-grid {
-    grid-template-columns: 1fr;
   }
 
   .side {

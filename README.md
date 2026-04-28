@@ -31,9 +31,28 @@ In the app:
 
 The first time you use Spotify favorites, you may need to log in again because RadioX requests the `user-library-modify` scope to save tracks to your Spotify library.
 
+## OpenAI DJ Setup
+
+RadioX can use OpenAI for both the DJ writing and the DJ voice. The Responses API turns the local song story, your mood, weather, schedule text, and taste profile into a warmer radio-DJ intro. The Audio Speech API turns that DJ output into generated speech. If `OPENAI_API_KEY` is missing or a request fails, RadioX falls back to local scripted lines and browser SpeechSynthesis.
+
+```bash
+export OPENAI_API_KEY="your-openai-api-key"
+export OPENAI_MODEL="gpt-5-mini"
+export OPENAI_TTS_MODEL="gpt-4o-mini-tts"
+export OPENAI_TTS_VOICE="sage"
+export OPENAI_TTS_SPEED="0.88"
+npm run dev
+```
+
+You can also place those values in a local `.env` file. The server loads `.env` on startup, and `.env` is ignored by git.
+
 ## Simulated Audio
 
 When Spotify is not connected, the play button starts a local Web Audio engine. It generates a radio bed from the current track's genre and energy: quiet recommendations lean toward pads/plucks, while rock recommendations add bass and drums. It is intentionally not a copy of the original song.
+
+## DJ Voice
+
+The `VOICE ON` control reads the same DJ output shown on screen. It prefers OpenAI TTS when configured and falls back to the browser's local SpeechSynthesis engine. OpenAI voices are AI-generated audio; disclose that clearly if you use RadioX beyond personal listening.
 
 ## Files
 

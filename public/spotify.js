@@ -49,6 +49,55 @@
     });
   }
 
+  function normalizeMatchText(value) {
+    return String(value || "")
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[’']/g, "")
+      .replace(/[^a-z0-9\u3040-\u30ff\u3400-\u9fff]+/g, " ")
+      .trim();
+  }
+
+  function tokenScore(left, right) {
+    const leftTokens = new Set(normalizeMatchText(left).split(/\s+/).filter(Boolean));
+    const rightTokens = new Set(normalizeMatchText(right).split(/\s+/).filter(Boolean));
+    if (!leftTokens.size || !rightTokens.size) return 0;
+    let matched = 0;
+    leftTokens.forEach((token) => {
+      if (rightTokens.has(token)) matched += 1;
+    });
+    return matched / Math.max(leftTokens.size, rightTokens.size);
+  }
+
+  function primaryArtist(artist) {
+    return String(artist || "").split(/\s+(?:&|and|和)\s+|,/i)[0].trim();
+  }
+
+  function searchQueryFor(target) {
+    if (typeof target === "string") return target;
+    const title = target?.title || target?.query || "";
+    const artist = primaryArtist(target?.artist || "");
+    return [title && `track:"${title}"`, artist && `artist:"${artist}"`].filter(Boolean).join(" ") || target?.query || "";
+  }
+
+  function spotifyCandidateScore(item, target) {
+    if (!target || typeof target === "string") return 1;
+    const targetTitle = normalizeMatchText(target.title || target.query);
+    const itemTitle = normalizeMatchText(item?.name);
+    const targetArtist = normalizeMatchText(primaryArtist(target.artist));
+    const itemArtists = normalizeMatchText((item?.artists || []).map((artist) => artist.name).join(" "));
+    let score = 0;
+
+    if (itemTitle === targetTitle) score += 70;
+    else if (itemTitle.includes(targetTitle) || targetTitle.includes(itemTitle)) score += 42;
+    else score += tokenScore(itemTitle, targetTitle) * 34;
+
+    if (targetArtist && itemArtists.includes(targetArtist)) score += 48;
+    else score += tokenScore(itemArtists, targetArtist) * 36;
+
+    return score;
+  }
+
   class SpotifyBridge extends EventTarget {
     constructor() {
       super();
@@ -272,6 +321,14 @@
         this.player.addListener("account_error", ({ message }) => this.dispatchError(message));
         this.player.addListener("playback_error", ({ message }) => this.dispatchError(message));
         this.player.addListener("autoplay_failed", () => this.dispatchError("Spotify autoplay was blocked. Press play again."));
+        this.player.addListener("player_state_changed", (state) => {
+          this.dispatchEvent(new CustomEvent("playerstate", {
+            detail: {
+              state,
+              currentTrack: state?.track_window?.current_track || null
+            }
+          }));
+        });
       }
 
       const connected = await withTimeout(
@@ -287,18 +344,22 @@
       this.dispatchEvent(new CustomEvent("error", { detail: { message } }));
     }
 
-    async searchTrack(query) {
+    async searchTrack(target) {
       const token = await this.getAccessToken();
       const url = new URL("https://api.spotify.com/v1/search");
-      url.searchParams.set("q", query);
+      url.searchParams.set("q", searchQueryFor(target));
       url.searchParams.set("type", "track");
-      url.searchParams.set("limit", "1");
+      url.searchParams.set("limit", "8");
       const response = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (!response.ok) throw new Error(`Spotify search failed: ${response.status}`);
       const data = await response.json();
-      return data.tracks?.items?.[0] || null;
+      const items = data.tracks?.items || [];
+      if (!items.length) return null;
+      return items
+        .map((item) => ({ item, score: spotifyCandidateScore(item, target) }))
+        .sort((a, b) => b.score - a.score)[0].item;
     }
 
     async playQuery(query) {
