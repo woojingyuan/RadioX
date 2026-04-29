@@ -12,15 +12,27 @@ const PORT = Number(process.env.PORT || 8765);
 const STATION_TIME_ZONE = process.env.RADIOX_TIME_ZONE || "Asia/Tokyo";
 const QUEUE_SIZE = 10;
 const RECENT_AVOID_COUNT = 18;
-const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5-mini";
-const OPENAI_TIMEOUT_MS = Number(process.env.OPENAI_TIMEOUT_MS || 8000);
+const RECOMMENDATION_COOLDOWN_DAYS = 7;
+const RECOMMENDATION_COOLDOWN_SIGNATURE = `weekly-cooldown-v${RECOMMENDATION_COOLDOWN_DAYS}`;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.5";
+const OPENAI_TIMEOUT_MS = Number(process.env.OPENAI_TIMEOUT_MS || 14000);
 const OPENAI_TTS_MODEL = process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts";
-const OPENAI_TTS_VOICE = process.env.OPENAI_TTS_VOICE || "sage";
+const OPENAI_TTS_VOICE = process.env.OPENAI_TTS_VOICE || "marin";
 const OPENAI_TTS_FORMAT = process.env.OPENAI_TTS_FORMAT || "mp3";
 const OPENAI_TTS_SPEED = Number(process.env.OPENAI_TTS_SPEED || 0.88);
 const OPENAI_TTS_TIMEOUT_MS = Number(process.env.OPENAI_TTS_TIMEOUT_MS || 12000);
 const OPENAI_TTS_INSTRUCTIONS = process.env.OPENAI_TTS_INSTRUCTIONS
   || "用中文普通话说。像一个成熟、温暖的深夜电台 DJ，正在跟一位老朋友低声聊天。不要播音腔，不要朗诵腔，不要客服腔。句子之间要有自然呼吸，讲歌名和乐队名时稍微停一下。情绪克制，有一点怀旧和松弛感，像饭后慢慢聊起一首老歌。";
+const TTS_PROVIDER = String(process.env.TTS_PROVIDER || process.env.RADIOX_TTS_PROVIDER || "auto").trim().toLowerCase();
+const INWORLD_TTS_ENDPOINT = process.env.INWORLD_TTS_ENDPOINT || "https://api.inworld.ai/tts/v1/voice";
+const INWORLD_TTS_MODEL = process.env.INWORLD_TTS_MODEL || "inworld-tts-1.5-max";
+const INWORLD_TTS_VOICE_ID = process.env.INWORLD_TTS_VOICE_ID || process.env.INWORLD_TTS_VOICE || "Dennis";
+const INWORLD_TTS_AUDIO_ENCODING = process.env.INWORLD_TTS_AUDIO_ENCODING || "LINEAR16";
+const INWORLD_TTS_SAMPLE_RATE_HERTZ = Number(process.env.INWORLD_TTS_SAMPLE_RATE_HERTZ || 22050);
+const INWORLD_TTS_TEMPERATURE = Number(process.env.INWORLD_TTS_TEMPERATURE || 0.9);
+const INWORLD_TTS_TEXT_NORMALIZATION = process.env.INWORLD_TTS_TEXT_NORMALIZATION || "ON";
+const INWORLD_TTS_TIMEOUT_MS = Number(process.env.INWORLD_TTS_TIMEOUT_MS || 12000);
 const DJ_SCRIPT_CACHE_LIMIT = 48;
 const DJ_AUDIO_CACHE_LIMIT = 24;
 const DJ_CHAT_LIMIT = 40;
@@ -102,6 +114,57 @@ function clamp(value, min, max) {
 
 function normalizeTerm(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function normalizeStringArray(value, fallback = [], limit = 80) {
+  const source = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/[\n,，]+/)
+      : fallback;
+  return [...new Set(source
+    .map((item) => String(item || "").trim())
+    .filter(Boolean))]
+    .slice(0, limit);
+}
+
+function normalizeNumberMap(value, fallback = {}) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : fallback;
+  return Object.fromEntries(Object.entries(source)
+    .map(([key, raw]) => [String(key || "").trim(), Number(raw)])
+    .filter(([key, raw]) => key && Number.isFinite(raw))
+    .map(([key, raw]) => [key, Math.round(clamp(raw, -50, 50))]));
+}
+
+function normalizeTimePreferences(value, fallback = {}) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : fallback;
+  const out = {};
+  ["morning", "workday", "dusk", "night", "deep-night"].forEach((part) => {
+    const item = source[part];
+    if (!item || typeof item !== "object" || Array.isArray(item)) return;
+    const genres = normalizeStringArray(item.genres, fallback[part]?.genres || [], 24);
+    const boost = Math.round(clamp(Number(item.boost ?? fallback[part]?.boost ?? 0), -30, 30));
+    if (genres.length || boost) out[part] = { genres, boost };
+  });
+  return out;
+}
+
+function normalizeProfilePayload(body, current) {
+  const next = {
+    ...current,
+    stationName: String(body.stationName || current.stationName || "RadioX").trim().slice(0, 40),
+    djName: String(body.djName || current.djName || "RadioX").trim().slice(0, 40),
+    nickname: String(body.nickname || current.nickname || "老朋友").trim().slice(0, 40),
+    tagline: String(body.tagline || current.tagline || "").trim().slice(0, 180),
+    tasteAnchors: normalizeStringArray(body.tasteAnchors, current.tasteAnchors, 80),
+    currentLean: normalizeStringArray(body.currentLean, current.currentLean, 40),
+    genreWeights: normalizeNumberMap(body.genreWeights, current.genreWeights),
+    eraBias: normalizeNumberMap(body.eraBias, current.eraBias),
+    timePreferences: normalizeTimePreferences(body.timePreferences, current.timePreferences)
+  };
+  if (!next.tasteAnchors.length) next.tasteAnchors = current.tasteAnchors || [];
+  if (!next.currentLean.length) next.currentLean = current.currentLean || [];
+  return next;
 }
 
 function scheduleTags(planText) {
@@ -198,6 +261,53 @@ function stableHash(value) {
   return hash >>> 0;
 }
 
+function dateKeyToUtcMs(dateKey) {
+  const match = String(dateKey || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return NaN;
+  return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
+function daysBetweenDateKeys(laterKey, earlierKey) {
+  const later = dateKeyToUtcMs(laterKey);
+  const earlier = dateKeyToUtcMs(earlierKey);
+  if (!Number.isFinite(later) || !Number.isFinite(earlier)) return Infinity;
+  return Math.floor((later - earlier) / DAY_MS);
+}
+
+function pruneRecommendationHistory(history, todayKey) {
+  const source = history && typeof history === "object" && !Array.isArray(history)
+    ? history
+    : {};
+  const pruned = {};
+
+  Object.entries(source).forEach(([trackId, dateKey]) => {
+    const age = daysBetweenDateKeys(todayKey, dateKey);
+    if (trackId && age >= 0 && age < RECOMMENDATION_COOLDOWN_DAYS) {
+      pruned[trackId] = dateKey;
+    }
+  });
+
+  return pruned;
+}
+
+function seedRecommendationHistory(state, context) {
+  return {
+    ...state,
+    recommendationHistory: pruneRecommendationHistory(state.recommendationHistory, context.now.dateKey)
+  };
+}
+
+function notePlayedTrack(state, trackId, context) {
+  const history = pruneRecommendationHistory(state.recommendationHistory, context.now.dateKey);
+  const id = String(trackId || "").trim();
+  if (id) history[id] = context.now.dateKey;
+  return history;
+}
+
+function weeklyAvoidIds(state, context) {
+  return new Set(Object.keys(pruneRecommendationHistory(state.recommendationHistory, context.now.dateKey)));
+}
+
 function rememberLimited(map, key, value, limit) {
   if (!key || !value) return;
   map.set(key, value);
@@ -223,7 +333,8 @@ function contextSignature(context, profile) {
     context.scheduleTags.join(","),
     JSON.stringify(profile.genreWeights || {}),
     JSON.stringify(profile.eraBias || {}),
-    JSON.stringify(activeTimePreference)
+    JSON.stringify(activeTimePreference),
+    RECOMMENDATION_COOLDOWN_SIGNATURE
   ].join("|")));
 }
 
@@ -326,11 +437,21 @@ function recommend(profile, catalog, context, state) {
   const scored = catalog
     .map((track) => decorateTrack(track, context, profile, state))
     .sort((a, b) => b.score - a.score);
-  const avoidIds = recentAvoidIds(state);
-  const fresh = scored.filter((track) => !avoidIds.has(track.id));
-  const selected = diversify(fresh, QUEUE_SIZE);
+  const recentIds = recentAvoidIds(state);
+  const weeklyIds = weeklyAvoidIds(state, context);
+  const strictFresh = scored.filter((track) => !recentIds.has(track.id) && !weeklyIds.has(track.id));
+  const selected = diversify(strictFresh, QUEUE_SIZE);
   if (selected.length >= QUEUE_SIZE) return selected;
-  return diversify(scored, QUEUE_SIZE, selected);
+
+  const weekFresh = scored.filter((track) => !weeklyIds.has(track.id));
+  const withWeekFresh = diversify(weekFresh, QUEUE_SIZE, selected);
+  if (withWeekFresh.length >= QUEUE_SIZE) return withWeekFresh;
+
+  const recentlyFresh = scored.filter((track) => !recentIds.has(track.id));
+  const withRecentFresh = diversify(recentlyFresh, QUEUE_SIZE, withWeekFresh);
+  if (withRecentFresh.length >= QUEUE_SIZE) return withRecentFresh;
+
+  return diversify(scored, QUEUE_SIZE, withRecentFresh);
 }
 
 function queueFromOrder(order, catalog, context, profile, state) {
@@ -376,53 +497,41 @@ function resolveQueue(profile, catalog, context, state) {
 
 function makeReason(track, context) {
   const genreLine = hasGenre(track, ["classical", "neo-classical"])
-    ? "钢琴和弦乐的留白多，适合把注意力从屏幕上慢慢移开"
+    ? "钢琴或弦乐的留白会把注意力从屏幕边缘轻轻拉开，声音之间的空处比旋律本身还重要"
     : hasGenre(track, ["jazz"])
-      ? "贝斯和鼓刷不会抢话，适合让晚上多一点松弛的摆动"
+      ? "爵士的低频和鼓点不是催促，而是在旁边给你一个稳定的摆动，让脑子不用一直绷着"
       : hasGenre(track, ["blues"])
-        ? "布鲁斯的句尾带一点沙哑，能把疲惫说得不那么硬"
+        ? "布鲁斯的句尾总带着一点沙哑和停顿，疲惫在这种声音里不会显得狼狈"
         : hasGenre(track, ["metal", "hard-rock"])
-          ? "吉他墙有重量，但这首的情绪不是乱冲，是把劲儿收在骨头里"
+          ? "吉他墙有重量，但不是乱冲；它更像把压在身体里的劲儿整理成一个可控的出口"
           : hasGenre(track, ["folk-rock", "mandarin-rock"])
-            ? "木吉他和人声靠前，像有人在旁边把话说慢一点"
-            : "旋律线不复杂，适合让今天的情绪自然落到歌里";
-
-  const weatherLine = {
-    clear: "今天空气清亮，声音不用铺太厚",
-    rain: "雨天适合听见更近的人声和低频",
-    cloudy: "云层压着，歌里需要一点透气的空间",
-    windy: "风大时，节奏可以替人稳住步子",
-    hot: "热的时候少一点堆叠，多一点轻的律动",
-    cold: "冷空气里，慢一点的音色会更贴身"
-  }[context.weather] || "今天适合从一首不急的歌开始";
+            ? "木吉他和人声靠前，像把话说到你旁边，不用隔着很大的舞台"
+            : "旋律线不复杂，能让今天的情绪有地方停一下";
 
   const moodLine = {
-    breath: "你现在不需要被催着振作",
-    focus: "它能给专注留一个不抢戏的脉冲",
-    blue: "它不急着把情绪抬高，只把阴影边缘照清楚一点",
-    recover: "它会把白天的噪声往后放，不急着解释",
-    drive: "它有一点往前走的推力，但不会把人推得太猛",
+    breath: "你现在不需要被催着振作，更适合先把注意力放回身体里",
+    focus: "它能给专注一个稳定的底盘，又不会抢走你正在处理的事情",
+    blue: "它不急着把情绪抬高，只把低处的东西照清楚一点",
+    recover: "它会把白天的噪声往后放，让恢复这件事变得没那么用力",
+    drive: "它有一点往前走的推力，但不会把人推到失控的位置",
     fire: "它把年轻时那股电流拿出来，却不只是靠音量取胜"
   }[context.mood] || "它跟你现在的状态有一段距离刚好的靠近";
 
   const storyLine = track.story?.headline
-    ? `再加上这首歌背后的线索是“${track.story.headline}”，听的时候就不只是听旋律了`
+    ? `这首歌背后的线索是“${track.story.headline}”，所以它不只是旋律选择，也是一段可以放进今天的故事`
     : `${track.artist} 的声音在这里比标签更重要`;
 
-  return `${weatherLine}。${genreLine}，${moodLine}。${storyLine}。`;
+  return `${genreLine}。${moodLine}。${storyLine}。`;
 }
 
 function makeDjScript(current, context, profile) {
-  const plan = context.planText.replace(/\s+/g, " ").slice(0, 90);
   const story = current.story?.text || "";
 
   return [
     {
       by: profile.djName,
       at: "now",
-      text: plan
-        ? `${profile.nickname}，先放 ${current.title}。想着你今天这件事：${plan}，这首歌不用急，慢慢进来就好。`
-        : `${profile.nickname}，先放 ${current.title}。这首歌不用急，慢慢进来就好。`
+      text: `${profile.nickname}，现在放 ${current.artist} 的 ${current.title}。`
     },
     {
       by: profile.djName,
@@ -487,9 +596,19 @@ function parseDjJson(text) {
   }
 }
 
-function normalizeDjLine(value, maxLength = 120) {
+function normalizeDjLine(value, maxLength = 280) {
+  const staleWeatherPhrase = new RegExp("\\u4e91\\u5c42\\u538b\\u7740[^。！？!?]*\\u900f\\u6c14\\u7684\\u7a7a\\u95f4[。！？!?]*", "g");
   return String(value || "")
     .replace(/\s+/g, " ")
+    .replace(staleWeatherPhrase, "")
+    .replace(/想着你今天这件事：?[^。！？!?]*[。！？!?，,、\s]*/g, "")
+    .replace(/这首歌不用急[，,、\s]*慢慢进来就好[。！？!?]*/g, "")
+    .replace(/^听完(?:它|这首歌?|这一首)[，,、\s]*/g, "")
+    .replace(/听完(?:它|这首歌?|这一首)[，,、\s]*/g, "")
+    .replace(/^我们?顺着(?:情绪|这份情绪|这种情绪|今天的情绪)(?:走进|进入|来到)?[，,、\s]*/g, "")
+    .replace(/顺着情绪走进/g, "")
+    .replace(/我们接着(?:走进|进入|来到)[^，。！？!?]*[，,、\s]*/g, "")
+    .replace(/^[，,、\s]+|[，,、\s]+$/g, "")
     .trim()
     .slice(0, maxLength);
 }
@@ -548,7 +667,7 @@ function aiScriptToTranscript(script, profile) {
 }
 
 function buildDjPrompt(payload) {
-  const { current, context, profile, queue } = payload;
+  const { current, context, profile } = payload;
   return JSON.stringify({
     listener: profile.nickname,
     station: profile.stationName,
@@ -573,12 +692,7 @@ function buildDjPrompt(payload) {
       currentLean: profile.currentLean,
       anchors: profile.tasteAnchors,
       nightPreference: profile.timePreferences?.[context.now.dayPart] || null
-    },
-    nextTracks: queue.slice(1, 4).map((track) => ({
-      title: track.title,
-      artist: track.artist,
-      storyHeadline: track.story?.headline
-    }))
+    }
   });
 }
 
@@ -603,15 +717,20 @@ async function generateAiDjTranscript(payload) {
         instructions: [
           "你是 RadioX，一个只服务一位听众的 24 小时私人电台 DJ。",
           "听众是老朋友。语气要像夜里开车、饭后散步、旧友叙旧：自然、松弛、具体、不过度煽情。",
-          "任务：先介绍歌曲，再深挖提供的歌曲故事，最后说明旋律、能量、配器或时代气质为什么切合听众今天的状态。",
+          "任务：先介绍歌曲，再深挖提供的歌曲故事或乐队/歌手线索，最后说明旋律、能量、配器或时代气质为什么切合听众今天的状态。",
+          "故事要有纵深：从 storySeed 里展开创作背景、乐队处境、主唱气质、录音/现场感或时代情绪；如果资料很少，就明确围绕已给线索展开，不要编造新事实。",
+          "切合状态的分析要更像真正 DJ 的长段落：说出声音怎么影响身体、注意力、疲劳、白天的计划余波，而不是只给一句泛泛的适合。",
           "只能基于输入里的 storySeed 和 recommendationReason 讲事实；不要编造新事实，不要引用歌词，不要提 OpenAI、AI、算法或 prompt。",
-          "禁止使用这些套话：让呼吸先落地、卡在缝里、刚好卡在、接住你的状态、状态找入口。要说具体声音、配器、节奏、歌手故事。",
+          "禁止使用天气压迫、空间透气、呼吸落地、卡在缝隙、接住状态这类抽象套话。要说具体声音、配器、节奏、歌手故事。",
+          "只介绍 currentTrack，不要预告下一首或上一首。禁止说“听完它”“听完这首”“顺着情绪走进”“我们接着走进”。",
+          "可以参考 dayContext 理解听众状态，但不要逐字复述 planText，不要说“想着你今天这件事”。",
           "不要用百分比描述能量，不要说“不吵，但会把你带起来”，不要说“第一句自己开门”。",
           "不要重复具体时间。不要写 Markdown。不要使用列表。",
-          "返回 JSON object，字段必须是 intro、story、fit、segue。每个字段 35 到 90 个中文字符。"
+          "返回 JSON object，字段必须是 intro、story、fit、segue。",
+          "长度：intro 40-90 中文字符；story 140-240 中文字符；fit 130-230 中文字符；segue 60-120 中文字符。segue 只收束当前正在播放的歌，不要转到下一首。"
         ].join("\n"),
         input: buildDjPrompt(payload),
-        max_output_tokens: 700
+        max_output_tokens: 1600
       })
     });
 
@@ -755,19 +874,15 @@ function stationPayload(options = {}) {
   const routines = readJson("routines.json");
   let state = readJson("state.json");
   const context = contextVector(state, routines);
+  state = seedRecommendationHistory(state, context);
   let queueState = resolveQueue(profile, catalog, context, state);
   const storedIndex = Number(state.currentIndex || 0);
   const queueExhausted = !queueState.stale && queueState.queue.length > 0 && storedIndex >= queueState.queue.length;
 
   if (options.persistQueue && queueExhausted) {
-    const exhaustedHistory = [
-      ...(state.history || []),
-      ...(Array.isArray(state.queueOrder) ? state.queueOrder : [])
-    ].slice(-30);
     state = {
       ...state,
       currentIndex: 0,
-      history: exhaustedHistory,
       queueSignature: null,
       queueOrder: []
     };
@@ -778,6 +893,7 @@ function stationPayload(options = {}) {
     state = {
       ...state,
       currentIndex: 0,
+      recommendationHistory: pruneRecommendationHistory(state.recommendationHistory, context.now.dateKey),
       queueDate: context.now.dateKey,
       queueSignature: queueState.signature,
       queueOrder: queueState.order,
@@ -812,6 +928,8 @@ function stationPayload(options = {}) {
       queueSignature: queueState.signature,
       volume: state.volume ?? 76,
       spotifyDeviceId: state.spotifyDeviceId || null,
+      favoriteIds: Array.isArray(state.favoriteIds) ? state.favoriteIds : [],
+      favoriteRequest: state.favoriteRequest || null,
       djChat: compactChat(state.djChat)
     }
   };
@@ -819,6 +937,22 @@ function stationPayload(options = {}) {
 
 function openAiTtsConfigured() {
   return Boolean(process.env.OPENAI_API_KEY);
+}
+
+function inworldTtsConfigured() {
+  return Boolean(String(process.env.INWORLD_API_KEY || "").trim());
+}
+
+function activeTtsProvider() {
+  if (TTS_PROVIDER === "inworld") return inworldTtsConfigured() ? "inworld" : null;
+  if (TTS_PROVIDER === "openai") return openAiTtsConfigured() ? "openai" : null;
+  if (inworldTtsConfigured()) return "inworld";
+  if (openAiTtsConfigured()) return "openai";
+  return null;
+}
+
+function ttsConfigured() {
+  return Boolean(activeTtsProvider());
 }
 
 function normalizeTtsText(value) {
@@ -837,17 +971,36 @@ function normalizeTtsText(value) {
   return paragraphs.join("\n\n").slice(0, 1800);
 }
 
-function openAiAudioCacheKey(text) {
+function djAudioCacheKey(provider, settings, text) {
   return String(stableHash([
-    OPENAI_TTS_MODEL,
-    OPENAI_TTS_VOICE,
-    OPENAI_TTS_FORMAT,
-    OPENAI_TTS_SPEED,
+    provider,
+    ...settings,
     text
   ].join("|")));
 }
 
-function audioContentType() {
+function openAiAudioCacheKey(text) {
+  return djAudioCacheKey("openai", [
+    OPENAI_TTS_MODEL,
+    OPENAI_TTS_VOICE,
+    OPENAI_TTS_FORMAT,
+    OPENAI_TTS_SPEED
+  ], text);
+}
+
+function inworldAudioCacheKey(text) {
+  return djAudioCacheKey("inworld", [
+    INWORLD_TTS_MODEL,
+    INWORLD_TTS_VOICE_ID,
+    INWORLD_TTS_AUDIO_ENCODING,
+    INWORLD_TTS_SAMPLE_RATE_HERTZ,
+    INWORLD_TTS_TEMPERATURE,
+    INWORLD_TTS_TEXT_NORMALIZATION
+  ], text);
+}
+
+function audioContentType(provider = activeTtsProvider()) {
+  if (provider === "inworld") return inworldAudioContentType();
   return {
     mp3: "audio/mpeg",
     wav: "audio/wav",
@@ -856,6 +1009,21 @@ function audioContentType() {
     flac: "audio/flac",
     pcm: "application/octet-stream"
   }[OPENAI_TTS_FORMAT] || "audio/mpeg";
+}
+
+function inworldAudioContentType() {
+  return {
+    LINEAR16: "audio/wav",
+    WAV: "audio/wav",
+    MP3: "audio/mpeg",
+    OGG_OPUS: "audio/ogg",
+    MULAW: "audio/basic"
+  }[String(INWORLD_TTS_AUDIO_ENCODING || "").toUpperCase()] || "audio/wav";
+}
+
+function inworldAuthorizationHeader() {
+  const key = String(process.env.INWORLD_API_KEY || "").trim();
+  return /^Basic\s+/i.test(key) ? key : `Basic ${key}`;
 }
 
 async function generateOpenAiDjAudio(text) {
@@ -909,6 +1077,89 @@ async function generateOpenAiDjAudio(text) {
   }
 }
 
+async function generateInworldDjAudio(text) {
+  const normalized = normalizeTtsText(text);
+  if (!inworldTtsConfigured()) {
+    const error = new Error("Inworld TTS is not configured");
+    error.statusCode = 503;
+    throw error;
+  }
+  if (!normalized) {
+    const error = new Error("Missing TTS text");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const cacheKey = inworldAudioCacheKey(normalized);
+  if (djAudioCache.has(cacheKey)) return djAudioCache.get(cacheKey);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), INWORLD_TTS_TIMEOUT_MS);
+  try {
+    const response = await fetch(INWORLD_TTS_ENDPOINT, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Authorization": inworldAuthorizationHeader(),
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        text: normalized,
+        voiceId: INWORLD_TTS_VOICE_ID,
+        modelId: INWORLD_TTS_MODEL,
+        audioConfig: {
+          audioEncoding: INWORLD_TTS_AUDIO_ENCODING,
+          sampleRateHertz: INWORLD_TTS_SAMPLE_RATE_HERTZ
+        },
+        temperature: INWORLD_TTS_TEMPERATURE,
+        applyTextNormalization: INWORLD_TTS_TEXT_NORMALIZATION
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => response.statusText);
+      const error = new Error(`Inworld TTS ${response.status}: ${errorText || response.statusText}`);
+      error.statusCode = response.status;
+      throw error;
+    }
+
+    const payload = await response.json();
+    const audioContent = payload.audioContent || payload.result?.audioContent;
+    if (!audioContent) {
+      const error = new Error("Inworld TTS response did not include audioContent");
+      error.statusCode = 502;
+      throw error;
+    }
+
+    const audio = Buffer.from(audioContent, "base64");
+    rememberLimited(djAudioCache, cacheKey, audio, DJ_AUDIO_CACHE_LIMIT);
+    return audio;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function generateDjAudio(text) {
+  const provider = activeTtsProvider();
+  if (provider === "inworld") {
+    return {
+      provider,
+      audio: await generateInworldDjAudio(text),
+      contentType: audioContentType(provider)
+    };
+  }
+  if (provider === "openai") {
+    return {
+      provider,
+      audio: await generateOpenAiDjAudio(text),
+      contentType: audioContentType(provider)
+    };
+  }
+  const error = new Error("Cloud TTS is not configured");
+  error.statusCode = 503;
+  throw error;
+}
+
 function send(res, status, body, headers = {}) {
   const payload = typeof body === "string" || Buffer.isBuffer(body) ? body : JSON.stringify(body);
   res.writeHead(status, {
@@ -948,24 +1199,51 @@ function parseBody(req) {
 
 async function handleApi(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/config") {
+    const provider = activeTtsProvider();
     sendJson(res, 200, {
       spotifyClientId: process.env.SPOTIFY_CLIENT_ID || "",
       spotifyRedirectUri: process.env.SPOTIFY_REDIRECT_URI || `http://127.0.0.1:${PORT}/callback`,
-      openAiTtsConfigured: openAiTtsConfigured()
+      openAiTtsConfigured: ttsConfigured(),
+      ttsConfigured: ttsConfigured(),
+      ttsProvider: provider,
+      ttsProviderPreference: TTS_PROVIDER
     });
+    return true;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/profile") {
+    sendJson(res, 200, readJson("profile.json"));
+    return true;
+  }
+
+  if ((req.method === "POST" || req.method === "PUT") && url.pathname === "/api/profile") {
+    const body = await parseBody(req);
+    const current = readJson("profile.json");
+    const nextProfile = normalizeProfilePayload(body, current);
+    writeJson("profile.json", nextProfile);
+    const state = readJson("state.json");
+    writeJson("state.json", {
+      ...state,
+      currentIndex: 0,
+      queueDate: localDateKey(),
+      queueSignature: null,
+      queueOrder: [],
+      updatedAt: new Date().toISOString()
+    });
+    sendJson(res, 200, stationPayload({ persistQueue: true }));
     return true;
   }
 
   if (req.method === "POST" && url.pathname === "/api/dj-audio") {
     const body = await parseBody(req);
     try {
-      const audio = await generateOpenAiDjAudio(body.text);
-      send(res, 200, audio, {
-        "Content-Type": audioContentType(),
-        "X-RadioX-Voice": "openai-tts"
+      const result = await generateDjAudio(body.text);
+      send(res, 200, result.audio, {
+        "Content-Type": result.contentType,
+        "X-RadioX-Voice": `${result.provider}-tts`
       });
     } catch (error) {
-      console.warn("OpenAI TTS failed", error.message);
+      console.warn("Cloud TTS failed", error.message);
       sendJson(res, error.statusCode || 502, { error: error.message });
     }
     return true;
@@ -1004,6 +1282,11 @@ async function handleApi(req, res, url) {
     return true;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/snapshot") {
+    sendJson(res, 200, stationPayload({ persistQueue: true }));
+    return true;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/context") {
     const body = await parseBody(req);
     const state = readJson("state.json");
@@ -1021,18 +1304,22 @@ async function handleApi(req, res, url) {
       updatedAt: new Date().toISOString()
     };
     writeJson("state.json", next);
-    sendJson(res, 200, await stationPayloadWithDj({ persistQueue: true }));
+    sendJson(res, 200, stationPayload({ persistQueue: true }));
     return true;
   }
 
   if (req.method === "POST" && url.pathname === "/api/play-state") {
     const body = await parseBody(req);
+    const payload = stationPayload({ persistQueue: true });
     const state = readJson("state.json");
     writeJson("state.json", {
       ...state,
       playing: Boolean(body.playing),
       volume: body.volume ?? state.volume,
       spotifyDeviceId: body.spotifyDeviceId || state.spotifyDeviceId,
+      recommendationHistory: body.playing && payload.current
+        ? notePlayedTrack(state, payload.current.id, payload.context)
+        : pruneRecommendationHistory(state.recommendationHistory, payload.context.now.dateKey),
       updatedAt: new Date().toISOString()
     });
     sendJson(res, 200, stationPayload({ persistQueue: true }));
@@ -1050,12 +1337,15 @@ async function handleApi(req, res, url) {
       ...state,
       currentIndex: queueExhausted ? 0 : nextIndex,
       history,
+      recommendationHistory: current
+        ? notePlayedTrack(state, current.id, payload.context)
+        : pruneRecommendationHistory(state.recommendationHistory, payload.context.now.dateKey),
       queueDate: localDateKey(),
       queueSignature: queueExhausted ? null : payload.state.queueSignature,
       queueOrder: queueExhausted ? [] : payload.state.queueOrder,
       updatedAt: new Date().toISOString()
     });
-    sendJson(res, 200, await stationPayloadWithDj({ persistQueue: true }));
+    sendJson(res, 200, stationPayload({ persistQueue: true }));
     return true;
   }
 
@@ -1071,7 +1361,7 @@ async function handleApi(req, res, url) {
       queueOrder: payload.state.queueOrder,
       updatedAt: new Date().toISOString()
     });
-    sendJson(res, 200, await stationPayloadWithDj({ persistQueue: true }));
+    sendJson(res, 200, stationPayload({ persistQueue: true }));
     return true;
   }
 
@@ -1079,7 +1369,14 @@ async function handleApi(req, res, url) {
     const body = await parseBody(req);
     const payload = stationPayload({ persistQueue: true });
     const state = readJson("state.json");
-    const targetIndex = clamp(Number(body.index), 0, Math.max(payload.queue.length - 1, 0));
+    const requestedTrackId = String(body.trackId || "").trim();
+    const idIndex = requestedTrackId
+      ? payload.queue.findIndex((track) => track.id === requestedTrackId)
+      : -1;
+    const targetIndex = idIndex >= 0
+      ? idIndex
+      : clamp(Number(body.index), 0, Math.max(payload.queue.length - 1, 0));
+    const shouldPlay = body.play === true || body.play === "true";
     const current = payload.current;
     const history = current && targetIndex !== payload.state.currentIndex
       ? [...(state.history || []), current.id].slice(-30)
@@ -1087,13 +1384,42 @@ async function handleApi(req, res, url) {
     writeJson("state.json", {
       ...state,
       currentIndex: targetIndex,
+      playing: shouldPlay ? true : Boolean(state.playing),
       history,
+      recommendationHistory: current && targetIndex !== payload.state.currentIndex
+        ? notePlayedTrack(state, current.id, payload.context)
+        : pruneRecommendationHistory(state.recommendationHistory, payload.context.now.dateKey),
       queueDate: localDateKey(),
       queueSignature: payload.state.queueSignature,
       queueOrder: payload.state.queueOrder,
       updatedAt: new Date().toISOString()
     });
-    sendJson(res, 200, await stationPayloadWithDj({ persistQueue: true }));
+    sendJson(res, 200, stationPayload({ persistQueue: true }));
+    return true;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/favorite") {
+    const body = await parseBody(req);
+    const payload = stationPayload({ persistQueue: true });
+    const state = readJson("state.json");
+    const current = payload.current;
+    const requestedTrackId = String(body.trackId || current?.id || "").trim();
+    const favorite = body.favorite !== false && body.favorite !== "false";
+    const ids = new Set(Array.isArray(state.favoriteIds) ? state.favoriteIds : []);
+    if (requestedTrackId && favorite) ids.add(requestedTrackId);
+    if (requestedTrackId && !favorite) ids.delete(requestedTrackId);
+    writeJson("state.json", {
+      ...state,
+      favoriteIds: [...ids],
+      favoriteRequest: requestedTrackId ? {
+        trackId: requestedTrackId,
+        favorite,
+        source: String(body.source || "toolbar").slice(0, 40),
+        requestedAt: new Date().toISOString()
+      } : state.favoriteRequest,
+      updatedAt: new Date().toISOString()
+    });
+    sendJson(res, 200, stationPayload({ persistQueue: true }));
     return true;
   }
 
@@ -1103,6 +1429,7 @@ async function handleApi(req, res, url) {
       ...state,
       currentIndex: 0,
       history: [],
+      recommendationHistory: {},
       djChat: [],
       queueDate: localDateKey(),
       queueSignature: null,

@@ -28,8 +28,29 @@ const els = {
   queue: document.querySelector("#queue"),
   queueCount: document.querySelector("#queueCount"),
   tasteTags: document.querySelector("#tasteTags"),
+  tasteEditButton: document.querySelector("#tasteEditButton"),
+  tasteSetup: document.querySelector("#tasteSetup"),
+  tasteSetupClose: document.querySelector("#tasteSetupClose"),
+  tasteStationInput: document.querySelector("#tasteStationInput"),
+  tasteNicknameInput: document.querySelector("#tasteNicknameInput"),
+  tasteAnchorsInput: document.querySelector("#tasteAnchorsInput"),
+  tasteLeanInput: document.querySelector("#tasteLeanInput"),
+  tasteNightGenresInput: document.querySelector("#tasteNightGenresInput"),
+  tasteGenreWeightsInput: document.querySelector("#tasteGenreWeightsInput"),
+  tasteSaveButton: document.querySelector("#tasteSaveButton"),
+  tasteStatus: document.querySelector("#tasteStatus"),
   serverState: document.querySelector("#serverState"),
-  spectrum: document.querySelector("#spectrum")
+  spectrum: document.querySelector("#spectrum"),
+  restCue: document.querySelector("#restCue"),
+  restCueToggle: document.querySelector("#restCueToggle"),
+  restCueMini: document.querySelector("#restCueMini"),
+  restCueState: document.querySelector("#restCueState"),
+  restCueText: document.querySelector("#restCueText"),
+  restCueTrack: document.querySelector("#restCueTrack"),
+  restCueArtist: document.querySelector("#restCueArtist"),
+  restCueNotify: document.querySelector("#restCueNotify"),
+  restCueLater: document.querySelector("#restCueLater"),
+  restCueAccept: document.querySelector("#restCueAccept")
 };
 
 const app = {
@@ -53,12 +74,36 @@ const app = {
   spotifyPlaySeq: 0,
   expectedSpotifyUri: "",
   spotifyMismatchTimer: null,
+  spotifyPrefetchTimer: null,
+  audioFeaturesCache: new Map(),
+  currentAudioFeatures: null,
+  lastFavoriteRequestKey: localStorage.getItem("radiox.favoriteRequestKey") || "",
+  spotifyState: {
+    positionSeconds: 0,
+    updatedAt: 0,
+    paused: true
+  },
+  restCue: {
+    expanded: false,
+    sessionStartedAt: Date.now(),
+    lastActivityAt: Date.now(),
+    dismissedUntil: Number(localStorage.getItem("radiox.restCueDismissedUntil") || 0),
+    recommendation: null,
+    notifyEnabled: localStorage.getItem("radiox.restCueNotify") === "on",
+    lastNotificationKey: ""
+  },
   favorites: new Set(JSON.parse(localStorage.getItem("radiox.favorites") || "[]"))
 };
 
 const SPOTIFY_CLIENT_ID_KEY = "radiox.spotify.clientId";
 const SPOTIFY_TOKEN_KEY = "radiox.spotify.token";
 const DJ_VOICE_KEY = "radiox.djVoice";
+const REST_CUE_NOTIFY_KEY = "radiox.restCueNotify";
+const FAVORITE_REQUEST_KEY = "radiox.favoriteRequestKey";
+const APP_TITLE = "RadioX";
+const REST_CUE_DISMISS_MS = 25 * 60 * 1000;
+const REST_CUE_BUSY_MS = 18 * 60 * 1000;
+const REST_CUE_CONTINUOUS_MS = 45 * 60 * 1000;
 
 function canonicalLoopbackOrigin() {
   return `${window.location.protocol}//127.0.0.1:${window.location.port || "8765"}`;
@@ -90,6 +135,10 @@ function formatTime(seconds) {
   return `${min}:${sec}`;
 }
 
+function formatMinutes(ms) {
+  return Math.max(1, Math.round(ms / 60000));
+}
+
 function api(path, options = {}) {
   return fetch(path, {
     ...options,
@@ -107,12 +156,55 @@ function saveFavorites() {
   localStorage.setItem("radiox.favorites", JSON.stringify([...app.favorites]));
 }
 
+function favoriteRequestKey(request) {
+  if (!request?.trackId || !request?.requestedAt) return "";
+  return `${request.requestedAt}:${request.trackId}:${request.favorite !== false}`;
+}
+
+function findTrackById(payload, trackId) {
+  if (!trackId || !payload) return null;
+  if (payload.current?.id === trackId) return payload.current;
+  return (payload.queue || []).find((track) => track.id === trackId) || null;
+}
+
+function updateCurrentFavoriteButton() {
+  const id = app.payload?.current?.id;
+  if (!id || !els.favButton) return;
+  els.favButton.textContent = app.favorites.has(id) ? "♥" : "♡";
+}
+
+function handleRemoteFavoriteRequest(payload) {
+  const request = payload?.state?.favoriteRequest;
+  const key = favoriteRequestKey(request);
+  if (!key || key === app.lastFavoriteRequestKey) return;
+  app.lastFavoriteRequestKey = key;
+  localStorage.setItem(FAVORITE_REQUEST_KEY, key);
+
+  const track = findTrackById(payload, request.trackId);
+  if (request.favorite === false) {
+    app.favorites.delete(request.trackId);
+    saveFavorites();
+    updateCurrentFavoriteButton();
+    return;
+  }
+
+  const wasFavorite = app.favorites.has(request.trackId);
+  app.favorites.add(request.trackId);
+  saveFavorites();
+  updateCurrentFavoriteButton();
+  if (!wasFavorite && track) syncFavoriteToSpotify(track).catch(console.warn);
+}
+
 function speechSupported() {
   return "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
 }
 
+function cloudTtsConfigured() {
+  return Boolean(app.spotifyConfig?.ttsConfigured ?? app.spotifyConfig?.openAiTtsConfigured);
+}
+
 function djVoiceSupported() {
-  return Boolean(app.spotifyConfig?.openAiTtsConfigured || speechSupported());
+  return Boolean(cloudTtsConfigured() || speechSupported());
 }
 
 function updateVoiceButton() {
@@ -160,6 +252,24 @@ function naturalizeDjText(text) {
     .replace(/。+/g, "。")
     .replace(/，+/g, "，")
     .trim();
+}
+
+function normalizeMatchText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[’']/g, "")
+    .replace(/[^a-z0-9\u3040-\u30ff\u3400-\u9fff]+/g, " ")
+    .trim();
+}
+
+function spotifyTrackMatchesCurrent(spotifyTrack, current) {
+  if (!spotifyTrack || !current) return false;
+  const title = normalizeMatchText(current.title);
+  const spotifyTitle = normalizeMatchText(spotifyTrack.name);
+  const artist = normalizeMatchText(String(current.artist || "").split(/\s+(?:&|and|和)\s+|,/i)[0]);
+  const spotifyArtists = normalizeMatchText((spotifyTrack.artists || []).map((item) => item.name).join(" "));
+  return Boolean(title && artist && (spotifyTitle.includes(title) || title.includes(spotifyTitle)) && spotifyArtists.includes(artist));
 }
 
 function splitVoiceParts(text) {
@@ -220,7 +330,7 @@ function stopDjVoice() {
   }
   if (speechSupported()) window.speechSynthesis.cancel();
   restoreVoiceDucking();
-  if (["TALKING", "VOICE", "OPENAI VOICE", "BROWSER VOICE"].includes(els.serverState?.textContent)) setServerState("READY");
+  if (["TALKING", "VOICE", "OPENAI VOICE", "INWORLD VOICE", "DJ VOICE", "BROWSER VOICE"].includes(els.serverState?.textContent)) setServerState("READY");
 }
 
 function duckPlaybackForVoice() {
@@ -239,8 +349,15 @@ function duckPlaybackForVoice() {
   };
 }
 
-async function playOpenAiDjVoice(payload, runId) {
-  if (!app.spotifyConfig?.openAiTtsConfigured) return false;
+function cloudVoiceLabel(headerValue) {
+  const provider = String(headerValue || app.spotifyConfig?.ttsProvider || "").toLowerCase();
+  if (provider.includes("inworld")) return "INWORLD VOICE";
+  if (provider.includes("openai")) return "OPENAI VOICE";
+  return "DJ VOICE";
+}
+
+async function playCloudDjVoice(payload, runId) {
+  if (!cloudTtsConfigured()) return false;
   const text = voiceTextFromPayload(payload);
   if (!text) return false;
 
@@ -255,19 +372,20 @@ async function playOpenAiDjVoice(payload, runId) {
       })
     });
     if (!response.ok) throw new Error(`/api/dj-audio ${response.status}`);
+    const voiceLabel = cloudVoiceLabel(response.headers.get("X-RadioX-Voice"));
     const blob = await response.blob();
     if (runId !== app.voiceRunId) return true;
 
     app.djAudioUrl = URL.createObjectURL(blob);
     app.djAudio = new Audio(app.djAudioUrl);
     app.voiceRestore = duckPlaybackForVoice();
-    app.djAudio.onplay = () => setServerState("OPENAI VOICE");
+    app.djAudio.onplay = () => setServerState(voiceLabel);
     app.djAudio.onended = () => {
       restoreVoiceDucking();
       if (app.djAudioUrl) URL.revokeObjectURL(app.djAudioUrl);
       app.djAudioUrl = "";
       app.djAudio = null;
-      if (els.serverState?.textContent === "OPENAI VOICE") setServerState("READY");
+      if (els.serverState?.textContent === voiceLabel) setServerState("READY");
     };
     app.djAudio.onerror = () => {
       restoreVoiceDucking();
@@ -279,7 +397,7 @@ async function playOpenAiDjVoice(payload, runId) {
     await app.djAudio.play();
     return true;
   } catch (error) {
-    console.warn("OpenAI TTS voice fallback", error);
+    console.warn("Cloud TTS voice fallback", error);
     setServerState("BROWSER VOICE");
     return false;
   }
@@ -329,7 +447,7 @@ async function speakDjIntro(payload, options = {}) {
 
   stopDjVoice();
   const runId = app.voiceRunId;
-  const ttsStarted = await playOpenAiDjVoice(payload, runId);
+  const ttsStarted = await playCloudDjVoice(payload, runId);
   if (!ttsStarted && runId === app.voiceRunId) speakBrowserDjIntro(parts, runId);
 }
 
@@ -402,12 +520,62 @@ function render(payload) {
   app.payload = payload;
   const { current, context, profile, queue, transcript, state, aiDj } = payload;
   els.heroLine.textContent = heroFromContext(context);
+  const hasCurrent = Boolean(current);
+  els.playButton.disabled = !hasCurrent;
+  els.prevButton.disabled = !hasCurrent;
+  els.nextButton.disabled = !hasCurrent;
+  els.favButton.disabled = !hasCurrent;
+  els.progress.disabled = !hasCurrent;
+  if (!hasCurrent) {
+    els.trackTitle.textContent = "正在整理下一批歌";
+    els.trackArtist.textContent = "RadioX 会继续向后推进，优先避开最近听过的曲目";
+    els.duration.textContent = "0:00";
+    els.elapsed.textContent = "0:00";
+    els.progress.value = "0";
+    els.playButton.textContent = "▶";
+    els.favButton.textContent = "♡";
+    updateVoiceButton();
+    const djSource = aiDj?.source === "openai" ? "OPENAI" : "LOCAL";
+    els.transcript.innerHTML = `
+      <div class="dj-output-box">
+        <div class="dj-output-toolbar">
+          <span>DJ OUTPUT</span>
+          <strong>${escapeHtml(djSource)}</strong>
+        </div>
+        <div class="dj-output-copy">
+          <p>老朋友，我在重新整理下一批歌。优先避开最近听过的曲目，继续往前推。</p>
+        </div>
+      </div>
+    `;
+    renderDjChat(state.djChat || []);
+    els.contextReadout.innerHTML = `
+      <div>weather: <strong>${context.weather}</strong></div>
+      <div>mood: <strong>${context.mood}</strong> / intensity <strong>${context.intensity}</strong></div>
+      <div>schedule: <strong>${context.scheduleTags.join(", ")}</strong></div>
+    `;
+    els.queueCount.textContent = `${queue.length} TRACKS`;
+    els.queue.innerHTML = queue.map((track, index) => `
+      <li data-queue-index="${index}">
+        <div>
+          <b>${escapeHtml(track.title)}</b>
+          <span>${escapeHtml(track.artist)}</span>
+          <small>${escapeHtml(track.story?.headline || "RadioX crate note")}</small>
+        </div>
+        <em>${String(index + 1).padStart(2, "0")}</em>
+      </li>
+    `).join("");
+    renderTasteTags(profile);
+    renderRestCue();
+    scheduleSpotifyPrefetch();
+    handleRemoteFavoriteRequest(payload);
+    return;
+  }
   els.trackTitle.textContent = current.title;
   els.trackArtist.textContent = `${current.artist} — ${current.genres.join(" / ")}`;
   els.duration.textContent = formatTime(current.duration);
   els.playButton.textContent = app.playing ? "Ⅱ" : "▶";
   els.volume.value = state.volume;
-  els.favButton.textContent = app.favorites.has(current.id) ? "♥" : "♡";
+  updateCurrentFavoriteButton();
   updateVoiceButton();
 
   const djSource = aiDj?.source === "openai" ? "OPENAI" : "LOCAL";
@@ -442,9 +610,10 @@ function render(payload) {
     </li>
   `).join("");
 
-  els.tasteTags.innerHTML = [...profile.currentLean, ...profile.tasteAnchors.slice(0, 10)]
-    .map((tag) => `<span class="chip">${escapeHtml(tag)}</span>`)
-    .join("");
+  renderTasteTags(profile);
+  renderRestCue();
+  scheduleSpotifyPrefetch();
+  handleRemoteFavoriteRequest(payload);
 }
 
 function escapeHtml(value) {
@@ -457,19 +626,325 @@ function escapeHtml(value) {
   }[char]));
 }
 
+function renderTasteTags(profile) {
+  if (!els.tasteTags || !profile) return;
+  els.tasteTags.innerHTML = [...(profile.currentLean || []), ...(profile.tasteAnchors || []).slice(0, 10)]
+    .map((tag) => `<span class="chip">${escapeHtml(tag)}</span>`)
+    .join("");
+}
+
 function renderDjChat(messages) {
   if (!els.djChatLog) return;
   els.djChatLog.innerHTML = (messages || []).map((message) => {
     const role = message.role === "user" ? "user" : "assistant";
     const name = role === "user" ? "YOU" : "RADIOX";
+    const thinking = message.thinking === true;
     return `
-      <article class="dj-message ${role}">
+      <article class="dj-message ${role}${thinking ? " thinking" : ""}">
         <small>${name}</small>
-        <p>${escapeHtml(message.text || "")}</p>
+        <p>${thinking ? "<span class=\"thinking-dots\"><i></i><i></i><i></i></span>" : escapeHtml(message.text || "")}</p>
       </article>
     `;
   }).join("");
   els.djChatLog.scrollTop = els.djChatLog.scrollHeight;
+}
+
+function listToLines(items) {
+  return (items || []).join("\n");
+}
+
+function parseList(value) {
+  return [...new Set(String(value || "")
+    .split(/[\n,，]+/)
+    .map((item) => item.trim())
+    .filter(Boolean))];
+}
+
+function weightsToText(weights) {
+  return Object.entries(weights || {})
+    .map(([genre, value]) => `${genre}=${value}`)
+    .join("\n");
+}
+
+function parseWeights(value) {
+  return Object.fromEntries(String(value || "")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const match = line.match(/^(.+?)[=:：]\s*(-?\d+(?:\.\d+)?)$/);
+      if (!match) return null;
+      return [match[1].trim(), Math.round(Number(match[2]))];
+    })
+    .filter(Boolean));
+}
+
+function openTasteSetup() {
+  if (!els.tasteSetup) return;
+  const profile = app.payload?.profile || {};
+  els.tasteStationInput.value = profile.stationName || "RadioX";
+  els.tasteNicknameInput.value = profile.nickname || "老朋友";
+  els.tasteAnchorsInput.value = listToLines(profile.tasteAnchors);
+  els.tasteLeanInput.value = listToLines(profile.currentLean);
+  els.tasteNightGenresInput.value = listToLines(profile.timePreferences?.night?.genres || []);
+  els.tasteGenreWeightsInput.value = weightsToText(profile.genreWeights);
+  if (els.tasteStatus) els.tasteStatus.textContent = "Edit, then save. The queue will retune.";
+  els.tasteSetup.hidden = false;
+  els.tasteAnchorsInput.focus();
+}
+
+function closeTasteSetup() {
+  if (els.tasteSetup) els.tasteSetup.hidden = true;
+}
+
+async function saveTasteProfile() {
+  const profile = app.payload?.profile || {};
+  const nightGenres = parseList(els.tasteNightGenresInput.value);
+  const body = {
+    ...profile,
+    stationName: els.tasteStationInput.value.trim() || "RadioX",
+    nickname: els.tasteNicknameInput.value.trim() || "老朋友",
+    tasteAnchors: parseList(els.tasteAnchorsInput.value),
+    currentLean: parseList(els.tasteLeanInput.value),
+    genreWeights: parseWeights(els.tasteGenreWeightsInput.value),
+    timePreferences: {
+      ...(profile.timePreferences || {}),
+      night: {
+        ...(profile.timePreferences?.night || {}),
+        genres: nightGenres,
+        boost: profile.timePreferences?.night?.boost ?? 18
+      },
+      "deep-night": {
+        ...(profile.timePreferences?.["deep-night"] || {}),
+        genres: nightGenres,
+        boost: profile.timePreferences?.["deep-night"]?.boost ?? 22
+      }
+    }
+  };
+
+  if (els.tasteStatus) els.tasteStatus.textContent = "Saving...";
+  els.tasteSaveButton.disabled = true;
+  try {
+    const payload = await api("/api/profile", {
+      method: "PUT",
+      body: JSON.stringify(body)
+    });
+    render(payload);
+    app.elapsedBeforePlay = 0;
+    app.startedAt = Date.now();
+    closeTasteSetup();
+    setServerState("TASTE SAVED");
+    refreshDjForCurrent(payload.current?.id).catch(console.warn);
+  } catch (error) {
+    console.warn(error);
+    if (els.tasteStatus) els.tasteStatus.textContent = "Save failed. Check the genre=weight lines.";
+    setServerState("RETRY");
+  } finally {
+    els.tasteSaveButton.disabled = false;
+  }
+}
+
+function hasAny(items, values) {
+  const set = new Set((items || []).map(String));
+  return values.some((value) => set.has(value));
+}
+
+function relaxationScore(track) {
+  let score = 0;
+  const energy = Number(track.energy || 50);
+  score += Math.max(0, 60 - energy);
+  if (hasAny(track.genres, ["classical", "neo-classical", "jazz", "blues"])) score += 28;
+  if (hasAny(track.genres, ["folk-rock", "pop-vocal"])) score += 12;
+  if (hasAny(track.moods, ["breath", "recover", "blue"])) score += 18;
+  if (hasAny(track.scheduleTags, ["recovery", "open"])) score += 10;
+  if (energy > 70) score -= 36;
+  return score;
+}
+
+function pickRestCueTrack(payload) {
+  const queue = payload?.queue || [];
+  const currentId = payload?.current?.id;
+  return queue
+    .map((track, index) => ({ track, index, score: relaxationScore(track) }))
+    .filter((item) => item.track.id !== currentId)
+    .sort((a, b) => b.score - a.score)[0] || null;
+}
+
+function restCueReason(payload) {
+  const context = payload?.context || {};
+  const now = Date.now();
+  const sessionMs = now - app.restCue.sessionStartedAt;
+  const busy = Number(context.intensity || 0) >= 4
+    || hasAny(context.scheduleTags, ["meetings", "focus", "training"]);
+  const continuous = sessionMs >= REST_CUE_CONTINUOUS_MS;
+  const busyLongEnough = busy && sessionMs >= REST_CUE_BUSY_MS;
+
+  if (busyLongEnough) {
+    return {
+      active: true,
+      label: "BUSY",
+      text: `你这轮已经撑了 ${formatMinutes(sessionMs)} 分钟，今天的安排也偏满。先放一首低能量的歌，把肩膀放下来。`
+    };
+  }
+  if (continuous) {
+    return {
+      active: true,
+      label: "LONG RUN",
+      text: `你已经连续待在这一轮里 ${formatMinutes(sessionMs)} 分钟了。可以用一首慢一点的歌给注意力换个挡。`
+    };
+  }
+  return {
+    active: false,
+    label: "WATCHING",
+    text: `目前还不用急着打断。RadioX 已经在看这轮时长和今天的日程，合适的时候会轻轻提醒你。`
+  };
+}
+
+function notificationsSupported() {
+  return "Notification" in window;
+}
+
+function updateRestCueNotifyButton() {
+  if (!els.restCueNotify) return;
+  const supported = notificationsSupported();
+  const permission = supported ? Notification.permission : "unsupported";
+  els.restCueNotify.disabled = !supported || permission === "denied";
+  els.restCueNotify.textContent = !supported
+    ? "NO API"
+    : permission === "denied"
+      ? "DENIED"
+      : app.restCue.notifyEnabled && permission === "granted"
+        ? "NOTIFY ON"
+        : "NOTIFY";
+  els.restCueNotify.classList.toggle("connected", app.restCue.notifyEnabled && permission === "granted");
+  els.restCueNotify.title = supported
+    ? "浏览器最小化或切到后台时，用系统通知提醒你"
+    : "当前浏览器不支持桌面通知";
+}
+
+async function requestRestCueNotifications() {
+  if (!notificationsSupported()) return;
+  const permission = Notification.permission === "default"
+    ? await Notification.requestPermission()
+    : Notification.permission;
+  app.restCue.notifyEnabled = permission === "granted"
+    ? !app.restCue.notifyEnabled || localStorage.getItem(REST_CUE_NOTIFY_KEY) !== "on"
+    : false;
+
+  if (permission === "granted") {
+    localStorage.setItem(REST_CUE_NOTIFY_KEY, app.restCue.notifyEnabled ? "on" : "off");
+  } else {
+    localStorage.setItem(REST_CUE_NOTIFY_KEY, "off");
+  }
+  updateRestCueNotifyButton();
+  renderRestCue();
+}
+
+function updateHiddenCueTitle(active) {
+  document.title = document.hidden && active ? "● REST CUE - RadioX" : APP_TITLE;
+}
+
+async function showRestCueNotification(reason, suggestion) {
+  if (
+    !document.hidden
+    || !app.restCue.notifyEnabled
+    || !notificationsSupported()
+    || Notification.permission !== "granted"
+    || !suggestion?.track
+  ) {
+    return;
+  }
+
+  const key = `${reason.label}:${suggestion.track.id}`;
+  if (app.restCue.lastNotificationKey === key) return;
+  app.restCue.lastNotificationKey = key;
+
+  const title = "RadioX 休息提示";
+  const options = {
+    body: `${reason.text}\n推荐：${suggestion.track.title} - ${suggestion.track.artist}`,
+    icon: "/icons/icon.svg",
+    badge: "/icons/icon.svg",
+    tag: "radiox-rest-cue",
+    renotify: true,
+    data: { url: window.location.href }
+  };
+
+  if ("serviceWorker" in navigator) {
+    const registration = await navigator.serviceWorker.ready;
+    await registration.showNotification(title, options);
+    return;
+  }
+
+  const notification = new Notification(title, options);
+  notification.onclick = () => {
+    window.focus();
+    notification.close();
+  };
+}
+
+function renderRestCue() {
+  if (!els.restCue || !app.payload) return;
+  const dismissed = Date.now() < app.restCue.dismissedUntil;
+  const reason = restCueReason(app.payload);
+  const suggestion = pickRestCueTrack(app.payload);
+  const active = reason.active && suggestion && !dismissed;
+  app.restCue.recommendation = suggestion;
+
+  els.restCue.classList.toggle("collapsed", !app.restCue.expanded);
+  els.restCue.classList.toggle("active", Boolean(active));
+  els.restCueToggle?.setAttribute("aria-expanded", String(app.restCue.expanded));
+  if (els.restCueMini) els.restCueMini.textContent = active ? "ready" : reason.label.toLowerCase();
+  if (els.restCueState) els.restCueState.textContent = active ? reason.label : (dismissed ? "LATER" : "READY");
+  if (els.restCueText) els.restCueText.textContent = active
+    ? reason.text
+    : dismissed
+      ? "我先不打扰你。稍后如果这一轮还在继续，我再提醒一次。"
+      : "现在还不是强提醒；如果你想主动松一下，我已经挑好一首低能量的歌，点 PLAY 才会播放。";
+  if (els.restCueTrack) els.restCueTrack.textContent = suggestion?.track?.title || "No cue yet";
+  if (els.restCueArtist) els.restCueArtist.textContent = suggestion
+    ? `${suggestion.track.artist} - ${suggestion.track.story?.headline || suggestion.track.genres.join(" / ")}`
+    : "RadioX is listening for the right moment";
+  if (els.restCueAccept) {
+    els.restCueAccept.disabled = !suggestion;
+    els.restCueAccept.title = suggestion
+      ? `切到 ${suggestion.track.title}`
+      : "当前 Queue 里还没有可切换的放松曲目";
+  }
+  updateRestCueNotifyButton();
+  updateHiddenCueTitle(Boolean(active));
+  showRestCueNotification(reason, suggestion).catch(console.warn);
+}
+
+function setRestCueExpanded(expanded) {
+  app.restCue.expanded = Boolean(expanded);
+  renderRestCue();
+}
+
+function dismissRestCue() {
+  app.restCue.dismissedUntil = Date.now() + REST_CUE_DISMISS_MS;
+  localStorage.setItem("radiox.restCueDismissedUntil", String(app.restCue.dismissedUntil));
+  renderRestCue();
+}
+
+async function acceptRestCue() {
+  const recommendation = app.restCue.recommendation || pickRestCueTrack(app.payload);
+  if (!recommendation) return;
+  app.restCue.dismissedUntil = Date.now() + REST_CUE_DISMISS_MS;
+  localStorage.setItem("radiox.restCueDismissedUntil", String(app.restCue.dismissedUntil));
+  const payload = await api("/api/jump", {
+    method: "POST",
+    body: JSON.stringify({ index: recommendation.index, trackId: recommendation.track.id, play: true })
+  });
+  if (app.playing) {
+    applyTrackChange(payload, { deferVoice: true });
+  } else {
+    render(payload);
+    app.elapsedBeforePlay = 0;
+    app.startedAt = Date.now();
+    await togglePlay();
+  }
+  refreshDjForCurrent(payload.current?.id).catch(console.warn);
+  setRestCueExpanded(false);
 }
 
 async function sendDjChat(event) {
@@ -481,7 +956,7 @@ async function sendDjChat(event) {
   const optimistic = [
     ...existing,
     { role: "user", text },
-    { role: "assistant", text: "我听见了，等我把这首歌和你今天的状态对一下..." }
+    { role: "assistant", text: "...", thinking: true }
   ];
   renderDjChat(optimistic);
   els.djChatInput.value = "";
@@ -638,15 +1113,25 @@ function handleProgressTouchEnd(event) {
   commitSeek(secondsFromClientX(touch.clientX));
 }
 
-function setPlaying(playing) {
-  if (playing === app.playing) return;
-  app.playing = playing;
-  if (playing) {
+function applyLocalPlayState(playing) {
+  const next = Boolean(playing);
+  if (next === app.playing) {
+    els.playButton.textContent = app.playing ? "Ⅱ" : "▶";
+    return false;
+  }
+  const elapsed = playbackSeconds();
+  app.playing = next;
+  if (next) {
     app.startedAt = Date.now();
   } else {
-    app.elapsedBeforePlay = playbackSeconds();
+    app.elapsedBeforePlay = elapsed;
   }
   els.playButton.textContent = app.playing ? "Ⅱ" : "▶";
+  return true;
+}
+
+function setPlaying(playing) {
+  if (!applyLocalPlayState(playing)) return;
   api("/api/play-state", {
     method: "POST",
     body: JSON.stringify({
@@ -671,15 +1156,22 @@ function stopSimAudio() {
   updateSpotifyButton();
 }
 
-async function playCurrentOnSpotify(track) {
+async function playCurrentOnSpotify(track, options = {}) {
   if (!track || !app.spotify?.status().authenticated) return null;
   const playSeq = ++app.spotifyPlaySeq;
   const targetId = track.id;
+  const resumeSeconds = options.positionSeconds ?? (
+    app.payload?.current?.id === targetId
+      ? playbackSeconds()
+      : 0
+  );
   setServerState("SPOTIFY");
   els.spotifyButton.textContent = app.spotify?.status().connected ? "TUNING" : "CONNECTING";
   els.spotifyButton.classList.remove("connected");
 
-  const spotifyTrack = await app.spotify.playQuery(track);
+  const spotifyTrack = await app.spotify.playQuery(track, {
+    positionMs: Math.round(Math.max(0, resumeSeconds) * 1000)
+  });
   if (playSeq !== app.spotifyPlaySeq || app.payload?.current?.id !== targetId) {
     if (app.payload?.current && app.playing) playCurrentOnSpotify(app.payload.current).catch(console.warn);
     return null;
@@ -687,6 +1179,7 @@ async function playCurrentOnSpotify(track) {
 
   app.spotifyTrack = spotifyTrack;
   app.expectedSpotifyUri = spotifyTrack?.uri || "";
+  loadAudioFeaturesForSpotifyTrack(track, spotifyTrack).catch(console.warn);
   if (spotifyTrack?.duration_ms) {
     app.payload.current.duration = Math.round(spotifyTrack.duration_ms / 1000);
     els.duration.textContent = formatTime(app.payload.current.duration);
@@ -763,23 +1256,47 @@ async function togglePlay() {
 async function refresh() {
   const payload = await api("/api/now");
   render(payload);
+  app.currentAudioFeatures = null;
   app.spotifyPlaySeq += 1;
   app.expectedSpotifyUri = "";
   app.playbackMode = "idle";
-  app.playing = false;
   app.elapsedBeforePlay = 0;
   app.startedAt = Date.now();
-  els.playButton.textContent = "▶";
-  api("/api/play-state", {
-    method: "POST",
-    body: JSON.stringify({ playing: false, volume: Number(els.volume.value) })
-  }).catch(console.warn);
+  if (payload.state?.playing) {
+    applyLocalPlayState(true);
+    if (app.spotify?.status().authenticated && payload.current) {
+      playCurrentOnSpotify(payload.current).catch(console.warn);
+    } else {
+      startSimAudio().catch(console.warn);
+    }
+  } else {
+    applyLocalPlayState(false);
+    api("/api/play-state", {
+      method: "POST",
+      body: JSON.stringify({ playing: false, volume: Number(els.volume.value) })
+    }).catch(console.warn);
+  }
 }
 
-function applyTrackChange(payload) {
+function applyTrackChange(payload, options = {}) {
   render(payload);
+  app.currentAudioFeatures = null;
   app.elapsedBeforePlay = 0;
   app.startedAt = Date.now();
+  if (options.honorServerPlayState && !payload.state?.playing) {
+    app.spotifyPlaySeq += 1;
+    app.expectedSpotifyUri = "";
+    app.spotify?.pause().catch(console.warn);
+    stopSimAudio();
+    stopDjVoice();
+    app.playbackMode = "idle";
+    applyLocalPlayState(false);
+    updateSpotifyButton();
+    return;
+  }
+  if (options.honorServerPlayState && payload.state?.playing) {
+    applyLocalPlayState(true);
+  }
   if (app.playing && app.spotify?.status().authenticated) {
     playCurrentOnSpotify(payload.current).catch((error) => {
       console.warn(error);
@@ -792,7 +1309,49 @@ function applyTrackChange(payload) {
   } else if (app.playing) {
     startSimAudio().catch(console.warn);
   }
-  if (app.playing) speakDjIntro(payload, { force: true });
+  if (app.playing && !options.deferVoice) speakDjIntro(payload, { force: true });
+}
+
+async function applyRemotePlayState(playing) {
+  const next = Boolean(playing);
+  if (next === app.playing) return;
+  if (next && app.payload?.current) {
+    if (app.spotify?.status().authenticated) {
+      await playCurrentOnSpotify(app.payload.current);
+    } else {
+      await startSimAudio();
+    }
+    applyLocalPlayState(true);
+    speakDjIntro(app.payload);
+    return;
+  }
+
+  app.spotifyPlaySeq += 1;
+  app.expectedSpotifyUri = "";
+  if (app.playbackMode === "spotify") app.spotify?.pause().catch(console.warn);
+  stopSimAudio();
+  stopDjVoice();
+  app.playbackMode = "idle";
+  applyLocalPlayState(false);
+  updateSpotifyButton();
+}
+
+async function syncExternalState() {
+  if (app.advancing || app.scrubbing || !app.payload) return;
+  const payload = await api("/api/snapshot").catch(() => api("/api/now"));
+  const currentChanged = payload.current?.id !== app.payload.current?.id;
+  const indexChanged = payload.state?.currentIndex !== app.payload.state?.currentIndex;
+  const queueChanged = payload.state?.queueSignature !== app.payload.state?.queueSignature;
+  const serverPlaying = Boolean(payload.state?.playing);
+  const playStateChanged = serverPlaying !== app.playing;
+  if (!currentChanged && !indexChanged && !queueChanged && !playStateChanged) return;
+  if (!currentChanged && !indexChanged && !queueChanged) {
+    await applyRemotePlayState(serverPlaying);
+    if (app.payload?.state) app.payload.state.playing = serverPlaying;
+    return;
+  }
+  applyTrackChange(payload, { honorServerPlayState: true, deferVoice: true });
+  if (currentChanged) refreshDjForCurrent(payload.current?.id).catch(console.warn);
 }
 
 async function nextTrack() {
@@ -800,7 +1359,8 @@ async function nextTrack() {
   app.advancing = true;
   try {
     const payload = await api("/api/next", { method: "POST", body: "{}" });
-    applyTrackChange(payload);
+    applyTrackChange(payload, { deferVoice: true });
+    refreshDjForCurrent(payload.current?.id).catch(console.warn);
   } finally {
     app.advancing = false;
   }
@@ -811,7 +1371,8 @@ async function previousTrack() {
   app.advancing = true;
   try {
     const payload = await api("/api/previous", { method: "POST", body: "{}" });
-    applyTrackChange(payload);
+    applyTrackChange(payload, { deferVoice: true });
+    refreshDjForCurrent(payload.current?.id).catch(console.warn);
   } finally {
     app.advancing = false;
   }
@@ -823,21 +1384,140 @@ async function jumpToQueueTrack(index) {
   if (!Number.isInteger(index) || index < 0 || index >= queue.length) return;
   app.advancing = true;
   try {
+    setServerState("SWITCH");
     const payload = await api("/api/jump", {
       method: "POST",
-      body: JSON.stringify({ index })
+      body: JSON.stringify({ index, trackId: queue[index]?.id })
     });
-    applyTrackChange(payload);
+    applyTrackChange(payload, { deferVoice: true });
+    refreshDjForCurrent(payload.current?.id).catch(console.warn);
   } finally {
     app.advancing = false;
   }
 }
 
+function spotifyTrackId(spotifyTrack) {
+  return spotifyTrack?.id || String(spotifyTrack?.uri || "").split(":").pop() || "";
+}
+
+function scheduleSpotifyPrefetch() {
+  if (!app.spotify?.status().authenticated || !app.payload?.queue?.length) return;
+  window.clearTimeout(app.spotifyPrefetchTimer);
+  const targets = [app.payload.current, ...app.payload.queue]
+    .filter(Boolean)
+    .slice(0, 12);
+  app.spotifyPrefetchTimer = window.setTimeout(() => {
+    app.spotify?.prefetchTracks(targets, 10).catch(console.warn);
+  }, 500);
+}
+
+async function loadAudioFeaturesForSpotifyTrack(localTrack, spotifyTrack) {
+  const id = spotifyTrackId(spotifyTrack);
+  if (!localTrack?.id || !id || !app.spotify?.getAudioFeatures) return null;
+  if (app.audioFeaturesCache.has(id)) {
+    const cached = app.audioFeaturesCache.get(id);
+    app.currentAudioFeatures = cached
+      ? { ...cached, localTrackId: localTrack.id, spotifyId: id }
+      : null;
+    return cached || null;
+  }
+
+  const features = await app.spotify.getAudioFeatures(id).catch((error) => {
+    console.warn(error);
+    return null;
+  });
+  app.audioFeaturesCache.set(id, features || false);
+  if (app.payload?.current?.id === localTrack.id) {
+    app.currentAudioFeatures = features
+      ? { ...features, localTrackId: localTrack.id, spotifyId: id }
+      : null;
+  }
+  return features;
+}
+
+async function refreshDjForCurrent(expectedId) {
+  const payload = await api("/api/now");
+  if (expectedId && payload.current?.id !== expectedId) return;
+  const wasPlaying = app.playing;
+  const elapsed = playbackSeconds();
+  if (payload.current?.id === app.payload?.current?.id && app.payload?.current?.duration) {
+    payload.current.duration = app.payload.current.duration;
+  }
+  render(payload);
+  app.elapsedBeforePlay = Math.min(elapsed, payload.current?.duration || elapsed);
+  app.startedAt = Date.now();
+  applyLocalPlayState(wasPlaying);
+  renderProgress();
+  if (wasPlaying) speakDjIntro(payload, { force: true });
+}
+
+function estimatedTempo(track) {
+  if (!track) return 88;
+  const energy = Number(track.energy || 50);
+  let tempo = 78 + energy * 0.46;
+
+  if (hasAny(track.genres, ["metal", "hard-rock", "punk", "grunge", "alternative-rock"])) {
+    tempo = 94 + energy * 0.5;
+  } else if (hasAny(track.genres, ["classic-rock", "progressive-rock", "mandarin-rock", "j-rock"])) {
+    tempo = 84 + energy * 0.42;
+  } else if (hasAny(track.genres, ["jazz"])) {
+    tempo = 76 + energy * 0.34;
+  } else if (hasAny(track.genres, ["blues"])) {
+    tempo = 70 + energy * 0.32;
+  } else if (hasAny(track.genres, ["classical", "neo-classical"])) {
+    tempo = 58 + energy * 0.3;
+  }
+
+  return Math.max(56, Math.min(158, tempo));
+}
+
+function beatPulse(beat, sharpness = 8) {
+  const phase = ((beat % 1) + 1) % 1;
+  return Math.exp(-phase * sharpness);
+}
+
+function clamp01(value, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(0, Math.min(1, number));
+}
+
+function rhythmProfile(track) {
+  const features = app.currentAudioFeatures?.localTrackId === track?.id
+    ? app.currentAudioFeatures
+    : null;
+  const localEnergy = (track?.energy || 45) / 100;
+  const acousticDefault = hasAny(track?.genres, ["classical", "neo-classical"]) ? 0.82
+    : hasAny(track?.genres, ["jazz", "blues", "folk-rock"]) ? 0.48
+      : 0.2;
+  const danceDefault = hasAny(track?.genres, ["jazz", "blues"]) ? 0.42
+    : hasAny(track?.genres, ["metal", "hard-rock", "punk", "grunge"]) ? 0.34
+      : 0.5;
+  const energy = clamp01(features?.energy, localEnergy);
+  const danceability = clamp01(features?.danceability, danceDefault);
+  const acousticness = clamp01(features?.acousticness, acousticDefault);
+  const valence = clamp01(features?.valence, hasAny(track?.moods, ["bright", "drive", "fire"]) ? 0.62 : 0.42);
+  const tempo = Math.max(48, Math.min(178, Number(features?.tempo) || estimatedTempo(track)));
+  const density = hasAny(track?.genres, ["metal", "hard-rock", "punk", "grunge"]) ? 1.24
+    : hasAny(track?.genres, ["jazz", "blues"]) ? 0.76
+      : hasAny(track?.genres, ["classical", "neo-classical"]) ? 0.46
+        : 0.92;
+
+  return {
+    tempo,
+    energy,
+    danceability,
+    acousticness,
+    valence,
+    density: density + danceability * 0.22 - acousticness * 0.12,
+    swing: hasAny(track?.genres, ["jazz", "blues"]) ? 0.18 : danceability * 0.08,
+    source: features ? "spotify" : "local"
+  };
+}
+
 function drawSpectrum() {
   const canvas = els.spectrum;
   const ctx = canvas.getContext("2d");
-  const width = canvas.width;
-  const height = canvas.height;
   const dpr = window.devicePixelRatio || 1;
   if (canvas.dataset.dpr !== String(dpr)) {
     const rect = canvas.getBoundingClientRect();
@@ -852,13 +1532,33 @@ function drawSpectrum() {
   const bars = Math.max(42, Math.floor(w / (8 * dpr)));
   const gap = 4 * dpr;
   const barWidth = Math.max(2 * dpr, (w - gap * bars) / bars);
-  const t = performance.now() / 620;
-  const energy = (app.payload?.current?.energy || 45) / 100;
+  const current = app.payload?.current;
+  const profile = rhythmProfile(current);
+  const elapsed = current ? playbackSeconds() : 0;
+  const beat = elapsed * profile.tempo / 60;
+  const barCycle = Math.max(0.42, profile.density);
+
   for (let i = 0; i < bars; i += 1) {
-    const wave = Math.sin(i * 0.29 + t) * 0.5 + Math.sin(i * 0.11 - t * 1.4) * 0.5;
-    const pulse = app.playing ? Math.sin(t * 3 + i * 0.47) * 0.5 + 0.5 : 0.22;
-    const normalized = Math.max(0.08, Math.abs(wave) * 0.72 + pulse * energy * 0.42);
-    const barHeight = normalized * h * 0.74;
+    const laneBeat = beat - i * 0.016 * barCycle + Math.sin(i * 0.11) * profile.swing;
+    const kick = app.playing ? beatPulse(laneBeat, 8 + profile.energy * 8) : 0.14;
+    const backbeat = app.playing ? beatPulse(laneBeat - 0.5, 11 + profile.danceability * 5) * (0.16 + profile.danceability * 0.34) : 0;
+    const syncopation = app.playing
+      ? beatPulse(laneBeat - (profile.swing ? 0.68 : 0.75), 13) * profile.danceability * 0.18
+      : 0;
+    const phrase = 0.6 + Math.sin(elapsed * 0.18 + i * 0.035) * 0.24;
+    const wave = Math.sin(i * (0.24 + profile.danceability * 0.08) + beat * (0.42 + profile.energy * 0.34)) * 0.38
+      + Math.sin(i * 0.12 - beat * (0.82 + profile.density * 0.18)) * (0.22 + profile.valence * 0.14);
+    const acousticLift = profile.acousticness * Math.abs(Math.sin(i * 0.17 + elapsed * 0.42)) * 0.18;
+    const normalized = Math.max(
+      0.08,
+      Math.abs(wave) * 0.3
+        + profile.energy * 0.17
+        + kick * (0.34 + profile.energy * 0.32)
+        + backbeat
+        + syncopation
+        + acousticLift
+    );
+    const barHeight = normalized * phrase * h * (profile.source === "spotify" ? 0.82 : 0.76);
     const x = i * (barWidth + gap);
     const y = h - barHeight - 6 * dpr;
     const gradient = ctx.createLinearGradient(0, y, 0, h);
@@ -868,6 +1568,81 @@ function drawSpectrum() {
     ctx.fillRect(x, y, barWidth, barHeight);
   }
   requestAnimationFrame(drawSpectrum);
+}
+
+function syncSpotifyPlaybackState(spotifyState, actualUri) {
+  if (
+    app.playbackMode !== "spotify"
+    || !spotifyState
+    || !app.expectedSpotifyUri
+    || actualUri !== app.expectedSpotifyUri
+  ) {
+    return;
+  }
+
+  const positionSeconds = Number(spotifyState.position) / 1000;
+  if (!Number.isFinite(positionSeconds)) return;
+  app.spotifyState = {
+    positionSeconds,
+    updatedAt: Date.now(),
+    paused: Boolean(spotifyState.paused)
+  };
+  app.elapsedBeforePlay = positionSeconds;
+  app.startedAt = Date.now();
+}
+
+function applySpotifyPlayerState(spotifyState) {
+  const spotifyTrack = spotifyState?.track_window?.current_track;
+  const actualUri = spotifyTrack?.uri;
+  if (!spotifyTrackMatchesCurrent(spotifyTrack, app.payload?.current)) return false;
+
+  app.playbackMode = "spotify";
+  app.expectedSpotifyUri = actualUri || app.expectedSpotifyUri;
+  app.spotifyTrack = spotifyTrack;
+  loadAudioFeaturesForSpotifyTrack(app.payload?.current, spotifyTrack).catch(console.warn);
+  app.playing = !spotifyState.paused;
+  els.playButton.textContent = app.playing ? "Ⅱ" : "▶";
+  syncSpotifyPlaybackState(spotifyState, actualUri || app.expectedSpotifyUri);
+  renderProgress();
+  updateSpotifyButton();
+  return true;
+}
+
+function spotifyPlaybackToPlayerState(playback) {
+  const track = playback?.item?.type === "track" ? playback.item : null;
+  if (!track) return null;
+  return {
+    paused: !playback.is_playing,
+    position: Number(playback.progress_ms) || 0,
+    track_window: {
+      current_track: track
+    }
+  };
+}
+
+async function syncSpotifyProgressFromPlayer() {
+  const status = app.spotify?.status();
+  if (!status?.authenticated || !app.payload?.current) return false;
+
+  if (status.connected) {
+    const state = await app.spotify.getCurrentState?.().catch((error) => {
+      console.warn(error);
+      return null;
+    });
+    if (state && applySpotifyPlayerState(state)) return true;
+  }
+
+  const playback = await app.spotify.getPlaybackState?.().catch((error) => {
+    console.warn(error);
+    if (/token|auth|expired|401/i.test(error.message || "")) {
+      app.spotify?.clearToken();
+      updateSpotifyButton();
+    }
+    return null;
+  });
+  const remoteState = spotifyPlaybackToPlayerState(playback);
+  if (!remoteState) return false;
+  return applySpotifyPlayerState(remoteState);
 }
 
 async function initSpotify() {
@@ -890,13 +1665,16 @@ async function initSpotify() {
   app.spotify.addEventListener("ready", () => {
     app.playbackMode = app.playbackMode === "spotify" ? "spotify" : app.playbackMode;
     updateSpotifyButton();
+    syncSpotifyProgressFromPlayer().catch(console.warn);
     api("/api/play-state", {
       method: "POST",
       body: JSON.stringify({ playing: app.playing, spotifyDeviceId: app.spotify.deviceId })
     }).catch(console.warn);
   });
   app.spotify.addEventListener("playerstate", (event) => {
+    const spotifyState = event.detail?.state;
     const actualUri = event.detail?.currentTrack?.uri;
+    syncSpotifyPlaybackState(spotifyState, actualUri);
     if (!app.playing || app.playbackMode !== "spotify" || !app.expectedSpotifyUri || !actualUri) return;
     if (actualUri === app.expectedSpotifyUri) return;
     window.clearTimeout(app.spotifyMismatchTimer);
@@ -964,10 +1742,45 @@ function updateSpotifyButton() {
   els.spotifyButton.classList.remove("connected");
 }
 
+function syncForegroundPlayback() {
+  syncExternalState()
+    .catch(console.warn)
+    .finally(() => {
+      syncSpotifyProgressFromPlayer().catch(console.warn);
+      window.setTimeout(() => syncSpotifyProgressFromPlayer().catch(console.warn), 550);
+    });
+}
+
 function bindEvents() {
   els.playButton.addEventListener("click", togglePlay);
   els.nextButton.addEventListener("click", nextTrack);
   els.prevButton.addEventListener("click", previousTrack);
+  els.restCueToggle?.addEventListener("click", () => setRestCueExpanded(!app.restCue.expanded));
+  els.restCueNotify?.addEventListener("click", () => {
+    requestRestCueNotifications().catch(console.warn);
+  });
+  els.restCueLater?.addEventListener("click", dismissRestCue);
+  els.restCueAccept?.addEventListener("click", () => {
+    acceptRestCue().catch((error) => {
+      console.warn(error);
+      setServerState("RETRY");
+    });
+  });
+  ["pointerdown", "keydown"].forEach((eventName) => {
+    window.addEventListener(eventName, () => {
+      app.restCue.lastActivityAt = Date.now();
+    }, { passive: true });
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      document.title = APP_TITLE;
+      app.restCue.lastNotificationKey = "";
+      syncForegroundPlayback();
+    }
+    renderRestCue();
+  });
+  window.addEventListener("focus", syncForegroundPlayback);
+  window.addEventListener("pageshow", syncForegroundPlayback);
   els.queue.addEventListener("dblclick", (event) => {
     const item = event.target.closest("li[data-queue-index]");
     if (!item) return;
@@ -984,6 +1797,10 @@ function bindEvents() {
     }
     saveFavorites();
     els.favButton.textContent = app.favorites.has(id) ? "♥" : "♡";
+    api("/api/favorite", {
+      method: "POST",
+      body: JSON.stringify({ trackId: id, favorite: !isFavorite, source: "pwa" })
+    }).catch(console.warn);
     if (!isFavorite) await syncFavoriteToSpotify(app.payload.current);
   });
   els.voiceButton?.addEventListener("click", () => {
@@ -1029,6 +1846,11 @@ function bindEvents() {
   });
   els.spotifySetupClose?.addEventListener("click", closeSpotifySetup);
   els.spotifySaveButton?.addEventListener("click", saveSpotifyClientId);
+  els.tasteEditButton?.addEventListener("click", openTasteSetup);
+  els.tasteSetupClose?.addEventListener("click", closeTasteSetup);
+  els.tasteSaveButton?.addEventListener("click", () => {
+    saveTasteProfile().catch(console.warn);
+  });
   els.djChatForm?.addEventListener("submit", sendDjChat);
   els.spotifyLoginButton?.addEventListener("click", async () => {
     const clientId = els.spotifyClientIdInput.value.trim();
@@ -1047,8 +1869,14 @@ function bindEvents() {
   els.spotifySetup?.addEventListener("click", (event) => {
     if (event.target === els.spotifySetup) closeSpotifySetup();
   });
+  els.tasteSetup?.addEventListener("click", (event) => {
+    if (event.target === els.tasteSetup) closeTasteSetup();
+  });
   window.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeSpotifySetup();
+    if (event.key === "Escape") {
+      closeSpotifySetup();
+      closeTasteSetup();
+    }
   });
 }
 
@@ -1062,9 +1890,13 @@ async function main() {
   tickClock();
   setInterval(tickClock, 1000);
   setInterval(renderProgress, 250);
+  setInterval(renderRestCue, 30000);
+  setInterval(() => syncExternalState().catch(console.warn), 2000);
   bindEvents();
   await initSpotify();
   await refresh();
+  scheduleSpotifyPrefetch();
+  await syncSpotifyProgressFromPlayer().catch(console.warn);
   drawSpectrum();
   setServerState("READY");
 }

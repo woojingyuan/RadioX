@@ -109,7 +109,10 @@
         </section>
 
         <section class="taste-panel">
-          <p class="label">TASTE MAP</p>
+          <div class="taste-head">
+            <p class="label">TASTE MAP</p>
+            <button class="pill-button compact" id="tasteEditButton" type="button">EDIT TASTE</button>
+          </div>
           <div id="tasteTags" class="chips"></div>
         </section>
       </aside>
@@ -135,6 +138,48 @@
         <div class="setup-actions">
           <button class="pill-button" id="spotifySaveButton" type="button">SAVE</button>
           <button class="send-button" id="spotifyLoginButton" type="button">LOGIN</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="tasteSetup" hidden>
+      <div class="modal-card taste-card" role="dialog" aria-modal="true" aria-labelledby="tasteSetupTitle">
+        <div class="modal-head">
+          <div>
+            <p class="label">PERSONALIZATION</p>
+            <h2 id="tasteSetupTitle">Taste Map</h2>
+          </div>
+          <button class="icon-button" id="tasteSetupClose" type="button" aria-label="Close">×</button>
+        </div>
+        <div class="taste-grid">
+          <label class="setup-field">
+            <span>STATION NAME</span>
+            <input id="tasteStationInput" type="text" spellcheck="false" autocomplete="off">
+          </label>
+          <label class="setup-field">
+            <span>DJ CALLS ME</span>
+            <input id="tasteNicknameInput" type="text" spellcheck="false" autocomplete="off">
+          </label>
+        </div>
+        <label class="setup-field">
+          <span>ANCHOR ARTISTS / BANDS</span>
+          <textarea id="tasteAnchorsInput" rows="7" spellcheck="false" placeholder="Metallica&#10;Queen&#10;Ado"></textarea>
+        </label>
+        <label class="setup-field">
+          <span>CURRENT LEAN</span>
+          <textarea id="tasteLeanInput" rows="4" spellcheck="false" placeholder="classical&#10;jazz&#10;blues"></textarea>
+        </label>
+        <label class="setup-field">
+          <span>EVENING / NIGHT PREFERENCE</span>
+          <textarea id="tasteNightGenresInput" rows="3" spellcheck="false" placeholder="classical&#10;jazz&#10;blues"></textarea>
+        </label>
+        <label class="setup-field">
+          <span>GENRE WEIGHTS</span>
+          <textarea id="tasteGenreWeightsInput" rows="8" spellcheck="false" placeholder="classic-rock=20&#10;jazz=23&#10;classical=24"></textarea>
+        </label>
+        <p class="setup-status" id="tasteStatus"></p>
+        <div class="setup-actions">
+          <button class="send-button" id="tasteSaveButton" type="button">SAVE TASTE</button>
         </div>
       </div>
     </div>

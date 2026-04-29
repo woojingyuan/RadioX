@@ -80,6 +80,14 @@
     return [title && `track:"${title}"`, artist && `artist:"${artist}"`].filter(Boolean).join(" ") || target?.query || "";
   }
 
+  function cacheKeyForTarget(target) {
+    if (typeof target === "string") return normalizeMatchText(target);
+    return [
+      normalizeMatchText(target?.title || target?.query || ""),
+      normalizeMatchText(primaryArtist(target?.artist || ""))
+    ].filter(Boolean).join("::");
+  }
+
   function spotifyCandidateScore(item, target) {
     if (!target || typeof target === "string") return 1;
     const targetTitle = normalizeMatchText(target.title || target.query);
@@ -106,6 +114,7 @@
       this.deviceId = null;
       this.ready = false;
       this.connecting = null;
+      this.trackCache = new Map();
     }
 
     async init(config) {
@@ -362,12 +371,36 @@
         .sort((a, b) => b.score - a.score)[0].item;
     }
 
-    async playQuery(query) {
+    async resolveTrack(target) {
+      const key = cacheKeyForTarget(target);
+      if (key && this.trackCache.has(key)) return this.trackCache.get(key);
+      const track = await this.searchTrack(target);
+      if (key && track) this.trackCache.set(key, track);
+      return track;
+    }
+
+    async prefetchTracks(targets, limit = 10) {
+      if (!this.readToken()) return;
+      const unique = [];
+      const seen = new Set();
+      (targets || []).forEach((target) => {
+        const key = cacheKeyForTarget(target);
+        if (!key || seen.has(key) || this.trackCache.has(key)) return;
+        seen.add(key);
+        unique.push(target);
+      });
+      for (const target of unique.slice(0, limit)) {
+        await this.resolveTrack(target).catch((error) => console.warn("Spotify prefetch skipped", error));
+      }
+    }
+
+    async playQuery(query, options = {}) {
       const token = await this.getAccessToken();
       await this.loadPlayer();
       if (this.player?.activateElement) await this.player.activateElement();
-      const track = await this.searchTrack(query);
+      const track = await this.resolveTrack(query);
       if (!track) throw new Error("Track not found on Spotify");
+      const positionMs = Math.max(0, Math.floor(Number(options.positionMs) || 0));
       const endpoint = new URL("https://api.spotify.com/v1/me/player/play");
       endpoint.searchParams.set("device_id", this.deviceId);
       const response = await fetch(endpoint, {
@@ -376,7 +409,7 @@
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ uris: [track.uri] })
+        body: JSON.stringify({ uris: [track.uri], position_ms: positionMs })
       });
       if (!response.ok && response.status !== 204) {
         throw new Error(`Spotify play failed: ${response.status}`);
@@ -386,7 +419,7 @@
 
     async saveTrackToLibrary(query) {
       const token = await this.getAccessToken();
-      const track = await this.searchTrack(query);
+      const track = await this.resolveTrack(query);
       if (!track?.uri) throw new Error("Track not found on Spotify");
 
       const endpoint = new URL("https://api.spotify.com/v1/me/library");
@@ -403,8 +436,36 @@
       throw new Error(`Spotify library save failed: ${response.status}`);
     }
 
+    async getAudioFeatures(trackId) {
+      if (!trackId) return null;
+      const token = await this.getAccessToken();
+      const endpoint = new URL(`https://api.spotify.com/v1/audio-features/${encodeURIComponent(trackId)}`);
+      const response = await fetch(endpoint, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.status === 403 || response.status === 404 || response.status === 410) return null;
+      if (!response.ok) throw new Error(`Spotify audio features failed: ${response.status}`);
+      return response.json();
+    }
+
     async toggle() {
       if (this.player) await this.player.togglePlay();
+    }
+
+    async getCurrentState() {
+      if (!this.player?.getCurrentState) return null;
+      return this.player.getCurrentState();
+    }
+
+    async getPlaybackState() {
+      const token = await this.getAccessToken();
+      const endpoint = new URL("https://api.spotify.com/v1/me/player");
+      const response = await fetch(endpoint, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.status === 204 || response.status === 404) return null;
+      if (!response.ok) throw new Error(`Spotify playback state failed: ${response.status}`);
+      return response.json();
     }
 
     async pause() {

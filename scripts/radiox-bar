@@ -1,0 +1,49 @@
+#!/bin/zsh
+set -euo pipefail
+
+ROOT="${0:A:h:h}"
+SOURCE="$ROOT/macos/RadioXBar/RadioXBar.swift"
+BUILD_DIR="$ROOT/.build"
+BUNDLE="$BUILD_DIR/RadioXBar.app"
+BINARY="$BUNDLE/Contents/MacOS/RadioXBar"
+PLIST="$BUNDLE/Contents/Info.plist"
+MODULE_CACHE="$BUILD_DIR/ModuleCache"
+
+mkdir -p "$BUNDLE/Contents/MacOS" "$MODULE_CACHE"
+swiftc "$SOURCE" -o "$BINARY" -framework Cocoa -module-cache-path "$MODULE_CACHE"
+cat > "$PLIST" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key>
+  <string>RadioXBar</string>
+  <key>CFBundleIdentifier</key>
+  <string>local.radiox.bar</string>
+  <key>CFBundleName</key>
+  <string>RadioX Bar</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>CFBundleShortVersionString</key>
+  <string>0.1</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>15.0</string>
+  <key>LSUIElement</key>
+  <true/>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>RadioX Bar uses Apple Events to find or open the existing RadioX tab in Google Chrome.</string>
+</dict>
+</plist>
+PLIST
+
+pkill -x RadioXBar 2>/dev/null || true
+pkill -f "$BINARY" 2>/dev/null || true
+sleep 0.2
+
+if ! open -n "$BUNDLE"; then
+  nohup "$BINARY" >/tmp/radiox-bar.log 2>&1 &
+fi
+
+echo "RadioX Bar launched. Log: /tmp/radiox-bar.log"

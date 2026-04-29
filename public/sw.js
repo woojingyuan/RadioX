@@ -1,4 +1,4 @@
-const CACHE_NAME = "radiox-v33";
+const CACHE_NAME = "radiox-v49";
 const ASSETS = [
   "/",
   "/index.html",
@@ -34,5 +34,18 @@ self.addEventListener("fetch", (event) => {
         return response;
       })
       .catch(() => caches.match(event.request))
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.url || "/";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true })
+      .then((clientList) => {
+        const existing = clientList.find((client) => client.url.includes(self.location.origin));
+        if (existing) return existing.focus();
+        return self.clients.openWindow(targetUrl);
+      })
   );
 });
