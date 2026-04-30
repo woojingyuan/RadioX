@@ -791,118 +791,6 @@ input[type="range"] {
   margin-top: 18px;
 }
 
-.rest-cue {
-  position: fixed;
-  right: 18px;
-  top: 50%;
-  z-index: 20;
-  width: min(320px, calc(100vw - 28px));
-  transform: translateY(-50%);
-  display: grid;
-  gap: 8px;
-  justify-items: end;
-  pointer-events: none;
-}
-
-.rest-cue-tab,
-.rest-cue-panel {
-  pointer-events: auto;
-}
-
-.rest-cue-tab {
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 13px;
-  color: var(--ink);
-  border: 1px solid rgba(247, 244, 232, 0.18);
-  border-radius: var(--radius);
-  background: rgba(3, 5, 4, 0.88);
-  box-shadow: var(--shadow);
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-}
-
-.rest-cue-tab small {
-  color: var(--muted);
-  font-size: 10px;
-  text-transform: uppercase;
-}
-
-.rest-cue.active .rest-cue-tab {
-  border-color: rgba(57, 245, 176, 0.56);
-  background: rgba(12, 35, 27, 0.94);
-}
-
-.rest-cue-panel {
-  width: 100%;
-  padding: 14px;
-  border: 1px solid rgba(57, 245, 176, 0.24);
-  border-radius: var(--radius);
-  background:
-    linear-gradient(180deg, rgba(9, 16, 13, 0.96), rgba(5, 7, 6, 0.96)),
-    radial-gradient(circle at 12px 12px, rgba(57, 245, 176, 0.1) 1px, transparent 1.4px) 0 0 / 18px 18px;
-  box-shadow: var(--shadow);
-}
-
-.rest-cue.collapsed .rest-cue-panel {
-  display: none;
-}
-
-.rest-cue-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--muted);
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 11px;
-}
-
-.rest-cue-head strong {
-  margin-left: auto;
-  color: var(--accent);
-  font-size: 10px;
-}
-
-.rest-cue-panel p {
-  margin: 12px 0;
-  color: rgba(247, 244, 232, 0.82);
-  line-height: 1.55;
-}
-
-.rest-cue-track {
-  display: grid;
-  gap: 4px;
-  padding: 10px;
-  border: 1px solid rgba(247, 244, 232, 0.1);
-  border-radius: var(--radius);
-  background: rgba(0, 0, 0, 0.38);
-}
-
-.rest-cue-track b,
-.rest-cue-track span {
-  overflow-wrap: anywhere;
-}
-
-.rest-cue-track span {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.rest-cue-actions {
-  display: flex;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.rest-cue-actions .send-button:disabled {
-  opacity: 0.42;
-  cursor: not-allowed;
-  transform: none;
-}
-
 @media (max-width: 900px) {
   .shell {
     grid-template-columns: 1fr;
@@ -952,14 +840,6 @@ input[type="range"] {
     order: 2;
   }
 
-  .rest-cue {
-    right: 8px;
-    left: 8px;
-    top: auto;
-    bottom: 10px;
-    width: auto;
-    transform: none;
-  }
 }
 
 @media (max-width: 520px) {

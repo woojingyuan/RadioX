@@ -39,13 +39,6 @@ private struct StationPayload: Decodable {
     let state: State?
 }
 
-private struct RestCueSelection {
-    let index: Int
-    let id: String
-    let title: String
-    let artist: String
-}
-
 private func claimSingleInstance() -> Bool {
     let fd = Darwin.open("/tmp/radiox-bar.lock", O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
     if fd < 0 {
@@ -324,8 +317,6 @@ private final class BarController: NSObject {
     private let noteView = RainbowMusicNoteView()
     private let actionsRow = NSStackView()
     private let transportActions = NSStackView()
-    private let restCueActions = NSStackView()
-    private let actionDivider = NSView()
     private let playPauseButton = RadioXIconButton(symbolName: "play.fill", label: "Play or pause")
     private let prevButton = RadioXIconButton(symbolName: "backward.end.fill", label: "Previous track")
     private let nextButton = RadioXIconButton(symbolName: "forward.end.fill", label: "Next track")
@@ -335,16 +326,12 @@ private final class BarController: NSObject {
     private let detailField = NSTextField(labelWithString: "local station")
     private let cueField = NSTextField(labelWithString: "")
     private let moreField = NSTextField(labelWithString: "")
-    private let acceptButton = RadioXButton(title: "REST")
-    private let laterButton = RadioXButton(title: "LATER")
     private let quitButton = RadioXButton(title: "QUIT")
     private var mode = BarMode.hidden
     private var collapseWorkItem: DispatchWorkItem?
     private var pendingClickWorkItem: DispatchWorkItem?
     private var timer: Timer?
     private var latestPayload: StationPayload?
-    private var restCueSelection: RestCueSelection?
-    private var dismissedUntil: Date?
 
     override init() {
         NSLog("RadioXBar initializing")
@@ -475,15 +462,6 @@ private final class BarController: NSObject {
 
         transportActions.orientation = .horizontal
         transportActions.spacing = 8
-        restCueActions.orientation = .horizontal
-        restCueActions.spacing = 8
-        restCueActions.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 0)
-
-        actionDivider.wantsLayer = true
-        actionDivider.layer?.backgroundColor = NSColor(calibratedRed: 0.965, green: 0.957, blue: 0.910, alpha: 0.18).cgColor
-        actionDivider.translatesAutoresizingMaskIntoConstraints = false
-        actionDivider.widthAnchor.constraint(equalToConstant: 1).isActive = true
-        actionDivider.heightAnchor.constraint(equalToConstant: 32).isActive = true
 
         playPauseButton.target = self
         playPauseButton.action = #selector(togglePlayback)
@@ -493,13 +471,9 @@ private final class BarController: NSObject {
         nextButton.action = #selector(nextTrack)
         favoriteButton.target = self
         favoriteButton.action = #selector(toggleFavorite)
-        acceptButton.target = self
-        acceptButton.action = #selector(acceptRestCue)
-        laterButton.target = self
-        laterButton.action = #selector(dismissRestCue)
         quitButton.target = self
         quitButton.action = #selector(quit)
-        [playPauseButton, prevButton, nextButton, favoriteButton, acceptButton, laterButton, quitButton].forEach { button in
+        [playPauseButton, prevButton, nextButton, favoriteButton, quitButton].forEach { button in
             button.controlSize = .small
             button.translatesAutoresizingMaskIntoConstraints = false
             let isIcon = button is RadioXIconButton
@@ -511,11 +485,7 @@ private final class BarController: NSObject {
         transportActions.addArrangedSubview(playPauseButton)
         transportActions.addArrangedSubview(nextButton)
         transportActions.addArrangedSubview(favoriteButton)
-        restCueActions.addArrangedSubview(acceptButton)
-        restCueActions.addArrangedSubview(laterButton)
         actionsRow.addArrangedSubview(transportActions)
-        actionsRow.addArrangedSubview(actionDivider)
-        actionsRow.addArrangedSubview(restCueActions)
         stack.addArrangedSubview(actionsRow)
         applyMode()
     }
@@ -528,7 +498,7 @@ private final class BarController: NSObject {
         case .minimal:
             size = NSSize(width: 390, height: 58)
         case .detail:
-            size = NSSize(width: 500, height: 242)
+            size = NSSize(width: 460, height: 218)
         }
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let x = screenFrame.midX - size.width / 2
@@ -555,13 +525,10 @@ private final class BarController: NSObject {
         cueField.isHidden = !showDetails
         moreField.isHidden = !showDetails
         actionsRow.isHidden = !showDetails
-        actionDivider.isHidden = !showDetails
         playPauseButton.isHidden = !showDetails
         prevButton.isHidden = !showDetails
         nextButton.isHidden = !showDetails
         favoriteButton.isHidden = !showDetails
-        acceptButton.isHidden = !showDetails
-        laterButton.isHidden = !showDetails
         quitButton.isHidden = !showDetails
         trackRow.isHidden = !visible
         panel.setFrame(frame(for: mode), display: true, animate: false)
@@ -872,44 +839,6 @@ private final class BarController: NSObject {
         }
     }
 
-    @objc private func acceptRestCue() {
-        guard let selection = restCueSelection else {
-            cueField.stringValue = "当前 Queue 里没有可切换的放松曲目。"
-            return
-        }
-
-        acceptButton.isEnabled = false
-        postJson(path: "api/jump", body: [
-            "index": selection.index,
-            "trackId": selection.id,
-            "play": true
-        ]) { [weak self] ok in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                if ok {
-                    self.dismissedUntil = Date().addingTimeInterval(25 * 60)
-                    self.restCueSelection = nil
-                    self.acceptButton.isEnabled = false
-                    self.cueField.stringValue = "已请求播放 \(selection.artist) 的 \(selection.title)。网页播放器会自动同步。"
-                } else {
-                    self.acceptButton.isEnabled = true
-                    self.cueField.stringValue = "切歌失败，先确认 RadioX server 正在运行。"
-                }
-            }
-        }
-    }
-
-    @objc private func dismissRestCue() {
-        dismissedUntil = Date().addingTimeInterval(25 * 60)
-        acceptButton.isEnabled = restCueSelection != nil
-        laterButton.isEnabled = restCueSelection != nil
-        trackField.stringValue = "25 分钟后再提醒"
-        cueField.stringValue = "好，我先不打扰你。25 分钟后如果这一轮还在继续，我再轻轻提醒。"
-        moreField.stringValue = "REST CUE snoozed for 25 minutes."
-        setMode(.minimal)
-        scheduleCollapse(after: 1.4)
-    }
-
     @objc private func quit() {
         NSApp.terminate(nil)
     }
@@ -977,28 +906,16 @@ private final class BarController: NSObject {
         }
 
         if let context = payload.context {
-            let candidate = restCueCandidate(in: payload)
-            restCueSelection = candidate.map {
-                RestCueSelection(index: $0.index, id: $0.track.id, title: $0.track.title, artist: $0.track.artist)
-            }
-            acceptButton.isEnabled = restCueSelection != nil
-            laterButton.isEnabled = restCueSelection != nil
-            cueField.stringValue = restCueText(payload: payload, context: context)
+            cueField.stringValue = "weather: \(context.weather) · mood: \(context.mood) · intensity: \(context.intensity)"
             moreField.stringValue = detailedText(payload: payload, context: context)
         } else {
-            restCueSelection = nil
-            acceptButton.isEnabled = false
-            laterButton.isEnabled = false
-            cueField.stringValue = "连接本地电台，等你需要松一下时我会浮出来。"
+            cueField.stringValue = "连接本地电台。"
             moreField.stringValue = "等待本地 RadioX 服务返回更多上下文。"
         }
     }
 
     private func showOffline(_ message: String) {
         latestPayload = nil
-        restCueSelection = nil
-        acceptButton.isEnabled = false
-        laterButton.isEnabled = false
         playPauseButton.setSymbol("play.fill")
         playPauseButton.isEnabled = false
         prevButton.isEnabled = false
@@ -1013,59 +930,13 @@ private final class BarController: NSObject {
         moreField.stringValue = "服务地址：\(radioXURL.absoluteString)"
     }
 
-    private func restCueText(payload: StationPayload, context: StationPayload.Context) -> String {
-        let busy = context.intensity >= 4 || ["workday", "night"].contains(context.now.dayPart)
-        let candidate = restCueCandidate(in: payload)
-
-        if let dismissedUntil, dismissedUntil > Date() {
-            if let candidate {
-                return "我先不主动提醒；如果你现在想切，仍可点 PLAY 切到 \(candidate.track.artist) 的 \(candidate.track.title)。"
-            }
-            return "我先不主动提醒。稍后如果这一轮还在继续，我再出现。"
-        }
-
-        if busy, let candidate {
-            return "REST CUE：如果这轮工作有点久，可以切到 \(candidate.track.artist) 的 \(candidate.track.title)。"
-        }
-        if let current = payload.current {
-            return "正在播放：\(current.artist)。"
-        }
-        return "RadioX 正在待命。"
-    }
-
-    private func restCueCandidate(in payload: StationPayload) -> (index: Int, track: StationPayload.Track)? {
-        let currentTitle = payload.current?.title
-        let currentArtist = payload.current?.artist
-        return payload.queue
-            .enumerated()
-            .filter { _, track in
-                !(track.title == currentTitle && track.artist == currentArtist)
-            }
-            .map { index, track in
-                (index: index, track: track, score: relaxationScore(track))
-            }
-            .sorted { left, right in
-                left.score > right.score
-            }
-            .first
-            .map { (index: $0.index, track: $0.track) }
-    }
-
-    private func relaxationScore(_ track: StationPayload.Track) -> Int {
-        let energy = track.energy ?? 50
-        return max(0, 60 - energy) + (energy <= 55 ? 24 : 0) - (energy > 70 ? 30 : 0)
-    }
-
     private func detailedText(payload: StationPayload, context: StationPayload.Context) -> String {
         let current = payload.current
         let trackLine = current.map { "\($0.artist) / \($0.title)" } ?? "no current track"
-        let candidateLine = restCueCandidate(in: payload)
-            .map { "\($0.track.artist) / \($0.track.title)" }
-            ?? "no rest cue candidate"
         return [
             "track: \(trackLine)",
-            "weather: \(context.weather) · mood: \(context.mood)",
-            "rest cue: \(candidateLine)"
+            "weather: \(context.weather)",
+            "mood: \(context.mood) · day part: \(context.now.dayPart)"
         ].joined(separator: "\n")
     }
 }

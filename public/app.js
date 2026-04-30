@@ -40,17 +40,7 @@ const els = {
   tasteSaveButton: document.querySelector("#tasteSaveButton"),
   tasteStatus: document.querySelector("#tasteStatus"),
   serverState: document.querySelector("#serverState"),
-  spectrum: document.querySelector("#spectrum"),
-  restCue: document.querySelector("#restCue"),
-  restCueToggle: document.querySelector("#restCueToggle"),
-  restCueMini: document.querySelector("#restCueMini"),
-  restCueState: document.querySelector("#restCueState"),
-  restCueText: document.querySelector("#restCueText"),
-  restCueTrack: document.querySelector("#restCueTrack"),
-  restCueArtist: document.querySelector("#restCueArtist"),
-  restCueNotify: document.querySelector("#restCueNotify"),
-  restCueLater: document.querySelector("#restCueLater"),
-  restCueAccept: document.querySelector("#restCueAccept")
+  spectrum: document.querySelector("#spectrum")
 };
 
 const app = {
@@ -89,27 +79,14 @@ const app = {
     updatedAt: 0,
     paused: true
   },
-  restCue: {
-    expanded: false,
-    sessionStartedAt: Date.now(),
-    lastActivityAt: Date.now(),
-    dismissedUntil: Number(localStorage.getItem("radiox.restCueDismissedUntil") || 0),
-    recommendation: null,
-    notifyEnabled: localStorage.getItem("radiox.restCueNotify") === "on",
-    lastNotificationKey: ""
-  },
   favorites: new Set(JSON.parse(localStorage.getItem("radiox.favorites") || "[]"))
 };
 
 const SPOTIFY_CLIENT_ID_KEY = "radiox.spotify.clientId";
 const SPOTIFY_TOKEN_KEY = "radiox.spotify.token";
 const DJ_VOICE_KEY = "radiox.djVoice";
-const REST_CUE_NOTIFY_KEY = "radiox.restCueNotify";
 const FAVORITE_REQUEST_KEY = "radiox.favoriteRequestKey";
 const APP_TITLE = "RadioX";
-const REST_CUE_DISMISS_MS = 25 * 60 * 1000;
-const REST_CUE_BUSY_MS = 18 * 60 * 1000;
-const REST_CUE_CONTINUOUS_MS = 45 * 60 * 1000;
 
 function canonicalLoopbackOrigin() {
   return `${window.location.protocol}//127.0.0.1:${window.location.port || "8765"}`;
@@ -139,10 +116,6 @@ function formatTime(seconds) {
   const min = Math.floor(safe / 60);
   const sec = String(safe % 60).padStart(2, "0");
   return `${min}:${sec}`;
-}
-
-function formatMinutes(ms) {
-  return Math.max(1, Math.round(ms / 60000));
 }
 
 function stableVoiceHash(value) {
@@ -705,7 +678,6 @@ function render(payload) {
       </li>
     `).join("");
     renderTasteTags(profile);
-    renderRestCue();
     scheduleSpotifyPrefetch();
     handleRemoteFavoriteRequest(payload);
     return;
@@ -751,7 +723,6 @@ function render(payload) {
   `).join("");
 
   renderTasteTags(profile);
-  renderRestCue();
   scheduleSpotifyPrefetch();
   handleRemoteFavoriteRequest(payload);
 }
@@ -887,204 +858,6 @@ async function saveTasteProfile() {
 function hasAny(items, values) {
   const set = new Set((items || []).map(String));
   return values.some((value) => set.has(value));
-}
-
-function relaxationScore(track) {
-  let score = 0;
-  const energy = Number(track.energy || 50);
-  score += Math.max(0, 60 - energy);
-  if (hasAny(track.genres, ["classical", "neo-classical", "jazz", "blues"])) score += 28;
-  if (hasAny(track.genres, ["folk-rock", "pop-vocal"])) score += 12;
-  if (hasAny(track.moods, ["breath", "recover", "blue"])) score += 18;
-  if (hasAny(track.scheduleTags, ["recovery", "open"])) score += 10;
-  if (energy > 70) score -= 36;
-  return score;
-}
-
-function pickRestCueTrack(payload) {
-  const queue = payload?.queue || [];
-  const currentId = payload?.current?.id;
-  return queue
-    .map((track, index) => ({ track, index, score: relaxationScore(track) }))
-    .filter((item) => item.track.id !== currentId)
-    .sort((a, b) => b.score - a.score)[0] || null;
-}
-
-function restCueReason(payload) {
-  const context = payload?.context || {};
-  const now = Date.now();
-  const sessionMs = now - app.restCue.sessionStartedAt;
-  const busy = Number(context.intensity || 0) >= 4
-    || hasAny(context.scheduleTags, ["meetings", "focus", "training"]);
-  const continuous = sessionMs >= REST_CUE_CONTINUOUS_MS;
-  const busyLongEnough = busy && sessionMs >= REST_CUE_BUSY_MS;
-
-  if (busyLongEnough) {
-    return {
-      active: true,
-      label: "BUSY",
-      text: `你这轮已经撑了 ${formatMinutes(sessionMs)} 分钟，今天的安排也偏满。先放一首低能量的歌，把肩膀放下来。`
-    };
-  }
-  if (continuous) {
-    return {
-      active: true,
-      label: "LONG RUN",
-      text: `你已经连续待在这一轮里 ${formatMinutes(sessionMs)} 分钟了。可以用一首慢一点的歌给注意力换个挡。`
-    };
-  }
-  return {
-    active: false,
-    label: "WATCHING",
-    text: `目前还不用急着打断。RadioX 已经在看这轮时长和今天的日程，合适的时候会轻轻提醒你。`
-  };
-}
-
-function notificationsSupported() {
-  return "Notification" in window;
-}
-
-function updateRestCueNotifyButton() {
-  if (!els.restCueNotify) return;
-  const supported = notificationsSupported();
-  const permission = supported ? Notification.permission : "unsupported";
-  els.restCueNotify.disabled = !supported || permission === "denied";
-  els.restCueNotify.textContent = !supported
-    ? "NO API"
-    : permission === "denied"
-      ? "DENIED"
-      : app.restCue.notifyEnabled && permission === "granted"
-        ? "NOTIFY ON"
-        : "NOTIFY";
-  els.restCueNotify.classList.toggle("connected", app.restCue.notifyEnabled && permission === "granted");
-  els.restCueNotify.title = supported
-    ? "浏览器最小化或切到后台时，用系统通知提醒你"
-    : "当前浏览器不支持桌面通知";
-}
-
-async function requestRestCueNotifications() {
-  if (!notificationsSupported()) return;
-  const permission = Notification.permission === "default"
-    ? await Notification.requestPermission()
-    : Notification.permission;
-  app.restCue.notifyEnabled = permission === "granted"
-    ? !app.restCue.notifyEnabled || localStorage.getItem(REST_CUE_NOTIFY_KEY) !== "on"
-    : false;
-
-  if (permission === "granted") {
-    localStorage.setItem(REST_CUE_NOTIFY_KEY, app.restCue.notifyEnabled ? "on" : "off");
-  } else {
-    localStorage.setItem(REST_CUE_NOTIFY_KEY, "off");
-  }
-  updateRestCueNotifyButton();
-  renderRestCue();
-}
-
-function updateHiddenCueTitle(active) {
-  document.title = document.hidden && active ? "● REST CUE - RadioX" : APP_TITLE;
-}
-
-async function showRestCueNotification(reason, suggestion) {
-  if (
-    !document.hidden
-    || !app.restCue.notifyEnabled
-    || !notificationsSupported()
-    || Notification.permission !== "granted"
-    || !suggestion?.track
-  ) {
-    return;
-  }
-
-  const key = `${reason.label}:${suggestion.track.id}`;
-  if (app.restCue.lastNotificationKey === key) return;
-  app.restCue.lastNotificationKey = key;
-
-  const title = "RadioX 休息提示";
-  const options = {
-    body: `${reason.text}\n推荐：${suggestion.track.title} - ${suggestion.track.artist}`,
-    icon: "/icons/icon.svg",
-    badge: "/icons/icon.svg",
-    tag: "radiox-rest-cue",
-    renotify: true,
-    data: { url: window.location.href }
-  };
-
-  if ("serviceWorker" in navigator) {
-    const registration = await navigator.serviceWorker.ready;
-    await registration.showNotification(title, options);
-    return;
-  }
-
-  const notification = new Notification(title, options);
-  notification.onclick = () => {
-    window.focus();
-    notification.close();
-  };
-}
-
-function renderRestCue() {
-  if (!els.restCue || !app.payload) return;
-  const dismissed = Date.now() < app.restCue.dismissedUntil;
-  const reason = restCueReason(app.payload);
-  const suggestion = pickRestCueTrack(app.payload);
-  const active = reason.active && suggestion && !dismissed;
-  app.restCue.recommendation = suggestion;
-
-  els.restCue.classList.toggle("collapsed", !app.restCue.expanded);
-  els.restCue.classList.toggle("active", Boolean(active));
-  els.restCueToggle?.setAttribute("aria-expanded", String(app.restCue.expanded));
-  if (els.restCueMini) els.restCueMini.textContent = active ? "ready" : reason.label.toLowerCase();
-  if (els.restCueState) els.restCueState.textContent = active ? reason.label : (dismissed ? "LATER" : "READY");
-  if (els.restCueText) els.restCueText.textContent = active
-    ? reason.text
-    : dismissed
-      ? "我先不打扰你。稍后如果这一轮还在继续，我再提醒一次。"
-      : "现在还不是强提醒；如果你想主动松一下，我已经挑好一首低能量的歌，点 PLAY 才会播放。";
-  if (els.restCueTrack) els.restCueTrack.textContent = suggestion?.track?.title || "No cue yet";
-  if (els.restCueArtist) els.restCueArtist.textContent = suggestion
-    ? `${suggestion.track.artist} - ${suggestion.track.story?.headline || suggestion.track.genres.join(" / ")}`
-    : "RadioX is listening for the right moment";
-  if (els.restCueAccept) {
-    els.restCueAccept.disabled = !suggestion;
-    els.restCueAccept.title = suggestion
-      ? `切到 ${suggestion.track.title}`
-      : "当前 Queue 里还没有可切换的放松曲目";
-  }
-  updateRestCueNotifyButton();
-  updateHiddenCueTitle(Boolean(active));
-  showRestCueNotification(reason, suggestion).catch(console.warn);
-}
-
-function setRestCueExpanded(expanded) {
-  app.restCue.expanded = Boolean(expanded);
-  renderRestCue();
-}
-
-function dismissRestCue() {
-  app.restCue.dismissedUntil = Date.now() + REST_CUE_DISMISS_MS;
-  localStorage.setItem("radiox.restCueDismissedUntil", String(app.restCue.dismissedUntil));
-  renderRestCue();
-}
-
-async function acceptRestCue() {
-  const recommendation = app.restCue.recommendation || pickRestCueTrack(app.payload);
-  if (!recommendation) return;
-  app.restCue.dismissedUntil = Date.now() + REST_CUE_DISMISS_MS;
-  localStorage.setItem("radiox.restCueDismissedUntil", String(app.restCue.dismissedUntil));
-  const payload = await api("/api/jump", {
-    method: "POST",
-    body: JSON.stringify({ index: recommendation.index, trackId: recommendation.track.id, play: true })
-  });
-  if (app.playing) {
-    applyTrackChange(payload, { deferVoice: true });
-  } else {
-    render(payload);
-    app.elapsedBeforePlay = 0;
-    app.startedAt = Date.now();
-    await togglePlay();
-  }
-  refreshDjForCurrent(payload.current?.id).catch(console.warn);
-  setRestCueExpanded(false);
 }
 
 async function sendDjChat(event) {
@@ -1981,29 +1754,11 @@ function bindEvents() {
   els.playButton.addEventListener("click", togglePlay);
   els.nextButton.addEventListener("click", nextTrack);
   els.prevButton.addEventListener("click", previousTrack);
-  els.restCueToggle?.addEventListener("click", () => setRestCueExpanded(!app.restCue.expanded));
-  els.restCueNotify?.addEventListener("click", () => {
-    requestRestCueNotifications().catch(console.warn);
-  });
-  els.restCueLater?.addEventListener("click", dismissRestCue);
-  els.restCueAccept?.addEventListener("click", () => {
-    acceptRestCue().catch((error) => {
-      console.warn(error);
-      setServerState("RETRY");
-    });
-  });
-  ["pointerdown", "keydown"].forEach((eventName) => {
-    window.addEventListener(eventName, () => {
-      app.restCue.lastActivityAt = Date.now();
-    }, { passive: true });
-  });
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {
       document.title = APP_TITLE;
-      app.restCue.lastNotificationKey = "";
       syncForegroundPlayback();
     }
-    renderRestCue();
   });
   window.addEventListener("focus", syncForegroundPlayback);
   window.addEventListener("pageshow", syncForegroundPlayback);
@@ -2121,7 +1876,6 @@ async function main() {
   tickClock();
   setInterval(tickClock, 1000);
   setInterval(renderProgress, 250);
-  setInterval(renderRestCue, 30000);
   setInterval(() => syncExternalState().catch(console.warn), 2000);
   setInterval(() => syncFavoriteStatusFromSpotify(app.payload?.current).catch(console.warn), 15000);
   bindEvents();

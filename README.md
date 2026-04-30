@@ -12,7 +12,7 @@ Open `http://127.0.0.1:8765`.
 
 ## Floating Toolbar
 
-RadioX includes a tiny macOS companion toolbar that stays available even when the browser is minimized. By default it is visually hidden at the top center of the screen. Move the mouse into that invisible top-center hot zone to drop down minimal info, single-click for detailed station context, and double-click to open the full RadioX web UI. REST CUE lives here now: the toolbar can suggest a lower-energy track, let you choose `PLAY`, or snooze it with `LATER`.
+RadioX includes a tiny macOS companion toolbar that stays available even when the browser is minimized. By default it is visually hidden at the top center of the screen. Move the mouse into that invisible top-center hot zone to drop down minimal info, single-click for detailed station context and playback controls, and double-click to open the full RadioX web UI.
 
 ```bash
 scripts/radiox-bar
