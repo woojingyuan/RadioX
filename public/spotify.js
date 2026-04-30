@@ -2,6 +2,17 @@
   const TOKEN_KEY = "radiox.spotify.token";
   const VERIFIER_KEY = "radiox.spotify.verifier";
   const STATE_KEY = "radiox.spotify.state";
+  const REQUIRED_SCOPES = [
+    "streaming",
+    "user-read-email",
+    "user-read-private",
+    "user-read-playback-state",
+    "user-modify-playback-state",
+    "user-read-currently-playing",
+    "user-library-read",
+    "user-library-modify"
+  ];
+  const SCOPE_VERSION = "radiox-spotify-scopes-v2";
 
   function randomString(length) {
     const possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
@@ -73,18 +84,30 @@
     return String(artist || "").split(/\s+(?:&|and|和)\s+|,/i)[0].trim();
   }
 
+  function isPlaceholderArtist(artist) {
+    return /^(spotify request|radiox request|listener request|unknown)$/i.test(String(artist || "").trim());
+  }
+
   function searchQueryFor(target) {
     if (typeof target === "string") return target;
     const title = target?.title || target?.query || "";
-    const artist = primaryArtist(target?.artist || "");
-    return [title && `track:"${title}"`, artist && `artist:"${artist}"`].filter(Boolean).join(" ") || target?.query || "";
+    const artist = isPlaceholderArtist(target?.artist) ? "" : primaryArtist(target?.artist || "");
+    if (!artist) return target?.query || title || "";
+    return [title && `track:"${title}"`, `artist:"${artist}"`].filter(Boolean).join(" ") || target?.query || "";
+  }
+
+  function tokenHasRequiredScopes(token) {
+    if (!token) return false;
+    if (token.scopeVersion === SCOPE_VERSION) return true;
+    const scopes = new Set(String(token.scope || "").split(/\s+/).filter(Boolean));
+    return REQUIRED_SCOPES.every((scope) => scopes.has(scope));
   }
 
   function cacheKeyForTarget(target) {
     if (typeof target === "string") return normalizeMatchText(target);
     return [
       normalizeMatchText(target?.title || target?.query || ""),
-      normalizeMatchText(primaryArtist(target?.artist || ""))
+      normalizeMatchText(isPlaceholderArtist(target?.artist) ? "" : primaryArtist(target?.artist || ""))
     ].filter(Boolean).join("::");
   }
 
@@ -92,7 +115,7 @@
     if (!target || typeof target === "string") return 1;
     const targetTitle = normalizeMatchText(target.title || target.query);
     const itemTitle = normalizeMatchText(item?.name);
-    const targetArtist = normalizeMatchText(primaryArtist(target.artist));
+    const targetArtist = normalizeMatchText(isPlaceholderArtist(target.artist) ? "" : primaryArtist(target.artist));
     const itemArtists = normalizeMatchText((item?.artists || []).map((artist) => artist.name).join(" "));
     let score = 0;
 
@@ -115,6 +138,7 @@
       this.ready = false;
       this.connecting = null;
       this.trackCache = new Map();
+      this.justAuthenticated = false;
     }
 
     async init(config) {
@@ -133,11 +157,14 @@
     }
 
     status() {
+      const token = this.readToken();
+      const authenticated = Boolean(token && tokenHasRequiredScopes(token));
       return {
         configured: this.configured(),
         connected: Boolean(this.deviceId),
         deviceId: this.deviceId,
-        authenticated: Boolean(this.readToken())
+        authenticated,
+        needsLogin: Boolean(token && !authenticated)
       };
     }
 
@@ -151,13 +178,14 @@
 
     writeToken(token) {
       const expiresAt = Date.now() + Number(token.expires_in || 3600) * 1000 - 60_000;
-      localStorage.setItem(TOKEN_KEY, JSON.stringify({ ...token, expiresAt }));
+      localStorage.setItem(TOKEN_KEY, JSON.stringify({ ...token, expiresAt, scopeVersion: SCOPE_VERSION }));
     }
 
     clearToken() {
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(VERIFIER_KEY);
       localStorage.removeItem(STATE_KEY);
+      this.justAuthenticated = false;
     }
 
     resetPlayer() {
@@ -175,6 +203,10 @@
     async getAccessToken() {
       const token = this.readToken();
       if (!token) throw new Error("Spotify not authenticated");
+      if (!tokenHasRequiredScopes(token)) {
+        this.clearToken();
+        throw new Error("Spotify permissions changed. Please login again.");
+      }
       if (token.expiresAt > Date.now()) return token.access_token;
       if (!token.refresh_token) throw new Error("Spotify token expired");
       const next = await requestToken({
@@ -193,6 +225,7 @@
       const verifier = randomString(64);
       const state = randomString(20);
       const challenge = base64Url(await sha256(verifier));
+      this.justAuthenticated = false;
       localStorage.setItem(VERIFIER_KEY, verifier);
       localStorage.setItem(STATE_KEY, state);
 
@@ -203,15 +236,8 @@
         code_challenge_method: "S256",
         code_challenge: challenge,
         state,
-        scope: [
-          "streaming",
-          "user-read-email",
-          "user-read-private",
-          "user-read-playback-state",
-          "user-modify-playback-state",
-          "user-read-currently-playing",
-          "user-library-modify"
-        ].join(" ")
+        show_dialog: "true",
+        scope: REQUIRED_SCOPES.join(" ")
       });
       window.location.href = `https://accounts.spotify.com/authorize?${params.toString()}`;
     }
@@ -219,25 +245,43 @@
     async handleCallback() {
       const url = new URL(window.location.href);
       const code = url.searchParams.get("code");
+      const error = url.searchParams.get("error");
       const returnedState = url.searchParams.get("state");
+      this.justAuthenticated = false;
+      if (error) {
+        localStorage.removeItem(VERIFIER_KEY);
+        localStorage.removeItem(STATE_KEY);
+        history.replaceState({}, document.title, "/");
+        throw new Error(`Spotify login failed: ${error}`);
+      }
       if (!code) return;
 
       const verifier = localStorage.getItem(VERIFIER_KEY);
       const expectedState = localStorage.getItem(STATE_KEY);
       if (!verifier || returnedState !== expectedState) {
+        localStorage.removeItem(VERIFIER_KEY);
+        localStorage.removeItem(STATE_KEY);
         throw new Error("Spotify callback state mismatch");
       }
 
-      const token = await requestToken({
-        client_id: this.config.spotifyClientId,
-        grant_type: "authorization_code",
-        code,
-        redirect_uri: this.config.spotifyRedirectUri,
-        code_verifier: verifier
-      });
+      let token;
+      try {
+        token = await requestToken({
+          client_id: this.config.spotifyClientId,
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: this.config.spotifyRedirectUri,
+          code_verifier: verifier
+        });
+      } catch (error) {
+        localStorage.removeItem(VERIFIER_KEY);
+        localStorage.removeItem(STATE_KEY);
+        throw error;
+      }
       this.writeToken(token);
       localStorage.removeItem(VERIFIER_KEY);
       localStorage.removeItem(STATE_KEY);
+      this.justAuthenticated = true;
       history.replaceState({}, document.title, "/");
     }
 
@@ -400,6 +444,7 @@
       if (this.player?.activateElement) await this.player.activateElement();
       const track = await this.resolveTrack(query);
       if (!track) throw new Error("Track not found on Spotify");
+      await this.setRepeatMode("off").catch((error) => console.warn("Spotify repeat off skipped", error));
       const positionMs = Math.max(0, Math.floor(Number(options.positionMs) || 0));
       const endpoint = new URL("https://api.spotify.com/v1/me/player/play");
       endpoint.searchParams.set("device_id", this.deviceId);
@@ -414,6 +459,7 @@
       if (!response.ok && response.status !== 204) {
         throw new Error(`Spotify play failed: ${response.status}`);
       }
+      this.setRepeatMode("off").catch((error) => console.warn("Spotify repeat off skipped", error));
       return track;
     }
 
@@ -431,9 +477,49 @@
 
       if (response.ok || response.status === 200 || response.status === 204) return track;
       if (response.status === 401 || response.status === 403) {
-        throw new Error("Spotify library permission missing. Please login again.");
+        throw new Error(`Spotify library save permission failed: ${response.status}`);
       }
       throw new Error(`Spotify library save failed: ${response.status}`);
+    }
+
+    async removeTrackFromLibrary(query) {
+      const token = await this.getAccessToken();
+      const track = await this.resolveTrack(query);
+      if (!track?.uri) throw new Error("Track not found on Spotify");
+
+      const endpoint = new URL("https://api.spotify.com/v1/me/library");
+      endpoint.searchParams.set("uris", track.uri);
+      const response = await fetch(endpoint, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.ok || response.status === 200 || response.status === 204) return track;
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(`Spotify library remove permission failed: ${response.status}`);
+      }
+      throw new Error(`Spotify library remove failed: ${response.status}`);
+    }
+
+    async isTrackSaved(query) {
+      const token = await this.getAccessToken();
+      const track = await this.resolveTrack(query);
+      if (!track?.uri) throw new Error("Track not found on Spotify");
+
+      const endpoint = new URL("https://api.spotify.com/v1/me/library/contains");
+      endpoint.searchParams.set("uris", track.uri);
+      const response = await fetch(endpoint, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        const body = await response.json().catch(() => []);
+        return Boolean(body?.[0]);
+      }
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(`Spotify library read permission failed: ${response.status}`);
+      }
+      throw new Error(`Spotify library status failed: ${response.status}`);
     }
 
     async getAudioFeatures(trackId) {
@@ -486,6 +572,20 @@
 
     async setVolume(value) {
       if (this.player) await this.player.setVolume(Math.max(0, Math.min(1, Number(value) || 0)));
+    }
+
+    async setRepeatMode(state = "off") {
+      const safeState = ["track", "context", "off"].includes(state) ? state : "off";
+      const token = await this.getAccessToken();
+      const endpoint = new URL("https://api.spotify.com/v1/me/player/repeat");
+      endpoint.searchParams.set("state", safeState);
+      if (this.deviceId) endpoint.searchParams.set("device_id", this.deviceId);
+      const response = await fetch(endpoint, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.ok || response.status === 204 || response.status === 404) return;
+      throw new Error(`Spotify repeat mode failed: ${response.status}`);
     }
 
     async seek(positionMs) {

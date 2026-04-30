@@ -4,11 +4,28 @@
     "title": "Nothing Else Matters",
     "artist": "Metallica",
     "query": "Nothing Else Matters Metallica",
-    "genres": ["metal", "classic-rock"],
-    "moods": ["breath", "blue", "recover"],
-    "weather": ["rain", "cloudy", "cold"],
-    "dayParts": ["night", "deep-night"],
-    "scheduleTags": ["recovery", "open"],
+    "genres": [
+      "metal",
+      "classic-rock"
+    ],
+    "moods": [
+      "breath",
+      "blue",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
     "energy": 42,
     "era": "young-fire",
     "duration": 388
@@ -18,11 +35,26 @@
     "title": "Enter Sandman",
     "artist": "Metallica",
     "query": "Enter Sandman Metallica",
-    "genres": ["metal", "hard-rock"],
-    "moods": ["fire", "drive"],
-    "weather": ["windy", "clear"],
-    "dayParts": ["dusk", "night"],
-    "scheduleTags": ["training", "social"],
+    "genres": [
+      "metal",
+      "hard-rock"
+    ],
+    "moods": [
+      "fire",
+      "drive"
+    ],
+    "weather": [
+      "windy",
+      "clear"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "training",
+      "social"
+    ],
     "energy": 88,
     "era": "young-fire",
     "duration": 331
@@ -32,11 +64,26 @@
     "title": "November Rain",
     "artist": "Guns N' Roses",
     "query": "November Rain Guns N' Roses",
-    "genres": ["hard-rock", "classic-rock"],
-    "moods": ["blue", "breath"],
-    "weather": ["rain", "cloudy"],
-    "dayParts": ["dusk", "night"],
-    "scheduleTags": ["recovery", "open"],
+    "genres": [
+      "hard-rock",
+      "classic-rock"
+    ],
+    "moods": [
+      "blue",
+      "breath"
+    ],
+    "weather": [
+      "rain",
+      "cloudy"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
     "energy": 54,
     "era": "young-fire",
     "duration": 537
@@ -46,11 +93,26 @@
     "title": "Under Pressure",
     "artist": "Queen & David Bowie",
     "query": "Under Pressure Queen David Bowie",
-    "genres": ["classic-rock"],
-    "moods": ["drive", "focus"],
-    "weather": ["clear", "windy"],
-    "dayParts": ["morning", "workday", "dusk"],
-    "scheduleTags": ["meetings", "focus"],
+    "genres": [
+      "classic-rock"
+    ],
+    "moods": [
+      "drive",
+      "focus"
+    ],
+    "weather": [
+      "clear",
+      "windy"
+    ],
+    "dayParts": [
+      "morning",
+      "workday",
+      "dusk"
+    ],
+    "scheduleTags": [
+      "meetings",
+      "focus"
+    ],
     "energy": 68,
     "era": "young-fire",
     "duration": 248
@@ -60,11 +122,27 @@
     "title": "Somebody To Love",
     "artist": "Queen",
     "query": "Somebody To Love Queen",
-    "genres": ["classic-rock", "pop-vocal"],
-    "moods": ["drive", "fire", "blue"],
-    "weather": ["clear", "cloudy"],
-    "dayParts": ["morning", "dusk"],
-    "scheduleTags": ["social", "open"],
+    "genres": [
+      "classic-rock",
+      "pop-vocal"
+    ],
+    "moods": [
+      "drive",
+      "fire",
+      "blue"
+    ],
+    "weather": [
+      "clear",
+      "cloudy"
+    ],
+    "dayParts": [
+      "morning",
+      "dusk"
+    ],
+    "scheduleTags": [
+      "social",
+      "open"
+    ],
     "energy": 76,
     "era": "young-fire",
     "duration": 296
@@ -74,11 +152,26 @@
     "title": "Come As You Are",
     "artist": "Nirvana",
     "query": "Come As You Are Nirvana",
-    "genres": ["grunge", "alternative-rock"],
-    "moods": ["blue", "focus"],
-    "weather": ["rain", "cloudy"],
-    "dayParts": ["workday", "night"],
-    "scheduleTags": ["focus", "recovery"],
+    "genres": [
+      "grunge",
+      "alternative-rock"
+    ],
+    "moods": [
+      "blue",
+      "focus"
+    ],
+    "weather": [
+      "rain",
+      "cloudy"
+    ],
+    "dayParts": [
+      "workday",
+      "night"
+    ],
+    "scheduleTags": [
+      "focus",
+      "recovery"
+    ],
     "energy": 61,
     "era": "young-fire",
     "duration": 219
@@ -88,11 +181,29 @@
     "title": "Wish You Were Here",
     "artist": "Pink Floyd",
     "query": "Wish You Were Here Pink Floyd",
-    "genres": ["progressive-rock", "classic-rock"],
-    "moods": ["breath", "blue", "recover"],
-    "weather": ["clear", "cloudy", "cold"],
-    "dayParts": ["dusk", "night", "deep-night"],
-    "scheduleTags": ["recovery", "open"],
+    "genres": [
+      "progressive-rock",
+      "classic-rock"
+    ],
+    "moods": [
+      "breath",
+      "blue",
+      "recover"
+    ],
+    "weather": [
+      "clear",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "dusk",
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
     "energy": 35,
     "era": "middle-calm",
     "duration": 334
@@ -102,11 +213,26 @@
     "title": "Time",
     "artist": "Pink Floyd",
     "query": "Time Pink Floyd",
-    "genres": ["progressive-rock", "classic-rock"],
-    "moods": ["focus", "drive"],
-    "weather": ["clear", "cloudy"],
-    "dayParts": ["workday", "dusk"],
-    "scheduleTags": ["focus", "meetings"],
+    "genres": [
+      "progressive-rock",
+      "classic-rock"
+    ],
+    "moods": [
+      "focus",
+      "drive"
+    ],
+    "weather": [
+      "clear",
+      "cloudy"
+    ],
+    "dayParts": [
+      "workday",
+      "dusk"
+    ],
+    "scheduleTags": [
+      "focus",
+      "meetings"
+    ],
     "energy": 66,
     "era": "middle-calm",
     "duration": 413
@@ -116,11 +242,26 @@
     "title": "Back In Black",
     "artist": "AC/DC",
     "query": "Back In Black AC/DC",
-    "genres": ["hard-rock", "classic-rock"],
-    "moods": ["fire", "drive"],
-    "weather": ["clear", "windy"],
-    "dayParts": ["dusk", "night"],
-    "scheduleTags": ["training", "social"],
+    "genres": [
+      "hard-rock",
+      "classic-rock"
+    ],
+    "moods": [
+      "fire",
+      "drive"
+    ],
+    "weather": [
+      "clear",
+      "windy"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "training",
+      "social"
+    ],
     "energy": 86,
     "era": "young-fire",
     "duration": 255
@@ -130,11 +271,26 @@
     "title": "Thank You",
     "artist": "Dido",
     "query": "Thank You Dido",
-    "genres": ["pop-vocal"],
-    "moods": ["breath", "recover"],
-    "weather": ["rain", "cloudy", "cold"],
-    "dayParts": ["morning", "night"],
-    "scheduleTags": ["recovery", "open"],
+    "genres": [
+      "pop-vocal"
+    ],
+    "moods": [
+      "breath",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "morning",
+      "night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
     "energy": 34,
     "era": "middle-calm",
     "duration": 218
@@ -144,11 +300,26 @@
     "title": "Easy On Me",
     "artist": "Adele",
     "query": "Easy On Me Adele",
-    "genres": ["pop-vocal"],
-    "moods": ["blue", "recover", "breath"],
-    "weather": ["rain", "cloudy", "cold"],
-    "dayParts": ["night", "deep-night"],
-    "scheduleTags": ["recovery"],
+    "genres": [
+      "pop-vocal"
+    ],
+    "moods": [
+      "blue",
+      "recover",
+      "breath"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery"
+    ],
     "energy": 31,
     "era": "middle-calm",
     "duration": 224
@@ -158,11 +329,26 @@
     "title": "うっせぇわ",
     "artist": "Ado",
     "query": "うっせぇわ Ado",
-    "genres": ["j-rock", "alternative-rock"],
-    "moods": ["fire", "drive"],
-    "weather": ["windy", "clear"],
-    "dayParts": ["dusk", "night"],
-    "scheduleTags": ["training", "social"],
+    "genres": [
+      "j-rock",
+      "alternative-rock"
+    ],
+    "moods": [
+      "fire",
+      "drive"
+    ],
+    "weather": [
+      "windy",
+      "clear"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "training",
+      "social"
+    ],
     "energy": 91,
     "era": "young-fire",
     "duration": 204
@@ -172,11 +358,28 @@
     "title": "Numb",
     "artist": "Linkin Park",
     "query": "Numb Linkin Park",
-    "genres": ["alternative-rock", "hard-rock"],
-    "moods": ["fire", "blue", "drive"],
-    "weather": ["rain", "windy", "cloudy"],
-    "dayParts": ["dusk", "night"],
-    "scheduleTags": ["training", "recovery"],
+    "genres": [
+      "alternative-rock",
+      "hard-rock"
+    ],
+    "moods": [
+      "fire",
+      "blue",
+      "drive"
+    ],
+    "weather": [
+      "rain",
+      "windy",
+      "cloudy"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "training",
+      "recovery"
+    ],
     "energy": 79,
     "era": "young-fire",
     "duration": 186
@@ -186,11 +389,26 @@
     "title": "Lost",
     "artist": "Linkin Park",
     "query": "Lost Linkin Park",
-    "genres": ["alternative-rock"],
-    "moods": ["blue", "drive", "focus"],
-    "weather": ["rain", "cloudy"],
-    "dayParts": ["workday", "night"],
-    "scheduleTags": ["focus", "recovery"],
+    "genres": [
+      "alternative-rock"
+    ],
+    "moods": [
+      "blue",
+      "drive",
+      "focus"
+    ],
+    "weather": [
+      "rain",
+      "cloudy"
+    ],
+    "dayParts": [
+      "workday",
+      "night"
+    ],
+    "scheduleTags": [
+      "focus",
+      "recovery"
+    ],
     "energy": 72,
     "era": "young-fire",
     "duration": 199
@@ -200,11 +418,28 @@
     "title": "Dream On",
     "artist": "Aerosmith",
     "query": "Dream On Aerosmith",
-    "genres": ["classic-rock", "hard-rock"],
-    "moods": ["drive", "blue", "breath"],
-    "weather": ["clear", "cloudy", "cold"],
-    "dayParts": ["dusk", "night"],
-    "scheduleTags": ["open", "focus"],
+    "genres": [
+      "classic-rock",
+      "hard-rock"
+    ],
+    "moods": [
+      "drive",
+      "blue",
+      "breath"
+    ],
+    "weather": [
+      "clear",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "open",
+      "focus"
+    ],
     "energy": 64,
     "era": "young-fire",
     "duration": 267
@@ -214,11 +449,26 @@
     "title": "SAKURA",
     "artist": "いきものがかり",
     "query": "SAKURA いきものがかり",
-    "genres": ["j-rock", "pop-vocal"],
-    "moods": ["breath", "recover"],
-    "weather": ["clear", "cloudy"],
-    "dayParts": ["morning", "dusk"],
-    "scheduleTags": ["open", "recovery"],
+    "genres": [
+      "j-rock",
+      "pop-vocal"
+    ],
+    "moods": [
+      "breath",
+      "recover"
+    ],
+    "weather": [
+      "clear",
+      "cloudy"
+    ],
+    "dayParts": [
+      "morning",
+      "dusk"
+    ],
+    "scheduleTags": [
+      "open",
+      "recovery"
+    ],
     "energy": 48,
     "era": "middle-calm",
     "duration": 356
@@ -228,11 +478,26 @@
     "title": "北京北京",
     "artist": "汪峰",
     "query": "北京北京 汪峰",
-    "genres": ["mandarin-rock"],
-    "moods": ["blue", "drive"],
-    "weather": ["cloudy", "cold", "rain"],
-    "dayParts": ["dusk", "night"],
-    "scheduleTags": ["focus", "recovery"],
+    "genres": [
+      "mandarin-rock"
+    ],
+    "moods": [
+      "blue",
+      "drive"
+    ],
+    "weather": [
+      "cloudy",
+      "cold",
+      "rain"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "focus",
+      "recovery"
+    ],
     "energy": 63,
     "era": "middle-calm",
     "duration": 323
@@ -242,11 +507,28 @@
     "title": "蓝莲花",
     "artist": "许巍",
     "query": "蓝莲花 许巍",
-    "genres": ["mandarin-rock", "folk-rock"],
-    "moods": ["breath", "drive", "recover"],
-    "weather": ["clear", "windy"],
-    "dayParts": ["morning", "dusk"],
-    "scheduleTags": ["open", "training", "recovery"],
+    "genres": [
+      "mandarin-rock",
+      "folk-rock"
+    ],
+    "moods": [
+      "breath",
+      "drive",
+      "recover"
+    ],
+    "weather": [
+      "clear",
+      "windy"
+    ],
+    "dayParts": [
+      "morning",
+      "dusk"
+    ],
+    "scheduleTags": [
+      "open",
+      "training",
+      "recovery"
+    ],
     "energy": 56,
     "era": "middle-calm",
     "duration": 270
@@ -256,11 +538,27 @@
     "title": "安和桥",
     "artist": "宋冬野",
     "query": "安和桥 宋冬野",
-    "genres": ["folk-rock"],
-    "moods": ["blue", "breath", "recover"],
-    "weather": ["rain", "cloudy", "cold"],
-    "dayParts": ["night", "deep-night"],
-    "scheduleTags": ["recovery", "open"],
+    "genres": [
+      "folk-rock"
+    ],
+    "moods": [
+      "blue",
+      "breath",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
     "energy": 27,
     "era": "late-night-wisdom",
     "duration": 251
@@ -270,11 +568,26 @@
     "title": "鲜花",
     "artist": "回春丹",
     "query": "鲜花 回春丹",
-    "genres": ["mandarin-rock", "alternative-rock"],
-    "moods": ["drive", "fire"],
-    "weather": ["clear", "windy"],
-    "dayParts": ["dusk", "night"],
-    "scheduleTags": ["social", "training"],
+    "genres": [
+      "mandarin-rock",
+      "alternative-rock"
+    ],
+    "moods": [
+      "drive",
+      "fire"
+    ],
+    "weather": [
+      "clear",
+      "windy"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "social",
+      "training"
+    ],
     "energy": 78,
     "era": "young-fire",
     "duration": 258
@@ -284,11 +597,29 @@
     "title": "Cello Suite No. 1: Prelude",
     "artist": "J. S. Bach",
     "query": "Bach Cello Suite No. 1 Prelude",
-    "genres": ["classical"],
-    "moods": ["breath", "focus", "recover"],
-    "weather": ["clear", "cold", "cloudy"],
-    "dayParts": ["morning", "workday", "deep-night"],
-    "scheduleTags": ["focus", "recovery", "open"],
+    "genres": [
+      "classical"
+    ],
+    "moods": [
+      "breath",
+      "focus",
+      "recover"
+    ],
+    "weather": [
+      "clear",
+      "cold",
+      "cloudy"
+    ],
+    "dayParts": [
+      "morning",
+      "workday",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "focus",
+      "recovery",
+      "open"
+    ],
     "energy": 24,
     "era": "late-night-wisdom",
     "duration": 151
@@ -298,11 +629,28 @@
     "title": "Clair de Lune",
     "artist": "Claude Debussy",
     "query": "Debussy Clair de Lune",
-    "genres": ["classical", "neo-classical"],
-    "moods": ["breath", "blue", "recover"],
-    "weather": ["rain", "cloudy", "cold"],
-    "dayParts": ["night", "deep-night"],
-    "scheduleTags": ["recovery", "open"],
+    "genres": [
+      "classical",
+      "neo-classical"
+    ],
+    "moods": [
+      "breath",
+      "blue",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
     "energy": 18,
     "era": "late-night-wisdom",
     "duration": 316
@@ -312,11 +660,29 @@
     "title": "Gymnopedie No. 1",
     "artist": "Erik Satie",
     "query": "Satie Gymnopedie No. 1",
-    "genres": ["classical", "neo-classical"],
-    "moods": ["breath", "recover", "blue"],
-    "weather": ["rain", "cloudy", "cold"],
-    "dayParts": ["morning", "night", "deep-night"],
-    "scheduleTags": ["recovery", "open"],
+    "genres": [
+      "classical",
+      "neo-classical"
+    ],
+    "moods": [
+      "breath",
+      "recover",
+      "blue"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "morning",
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
     "energy": 15,
     "era": "late-night-wisdom",
     "duration": 196
@@ -326,11 +692,28 @@
     "title": "The Thrill Is Gone",
     "artist": "B.B. King",
     "query": "The Thrill Is Gone B.B. King",
-    "genres": ["blues"],
-    "moods": ["blue", "recover", "breath"],
-    "weather": ["rain", "cloudy", "cold"],
-    "dayParts": ["dusk", "night", "deep-night"],
-    "scheduleTags": ["recovery", "open"],
+    "genres": [
+      "blues"
+    ],
+    "moods": [
+      "blue",
+      "recover",
+      "breath"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "dusk",
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
     "energy": 38,
     "era": "late-night-wisdom",
     "duration": 324
@@ -340,11 +723,26 @@
     "title": "Boom Boom",
     "artist": "John Lee Hooker",
     "query": "Boom Boom John Lee Hooker",
-    "genres": ["blues"],
-    "moods": ["drive", "fire"],
-    "weather": ["windy", "clear", "hot"],
-    "dayParts": ["dusk", "night"],
-    "scheduleTags": ["training", "social"],
+    "genres": [
+      "blues"
+    ],
+    "moods": [
+      "drive",
+      "fire"
+    ],
+    "weather": [
+      "windy",
+      "clear",
+      "hot"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "training",
+      "social"
+    ],
     "energy": 70,
     "era": "late-night-wisdom",
     "duration": 149
@@ -354,11 +752,28 @@
     "title": "So What",
     "artist": "Miles Davis",
     "query": "So What Miles Davis",
-    "genres": ["jazz"],
-    "moods": ["focus", "breath", "recover"],
-    "weather": ["rain", "cloudy", "clear"],
-    "dayParts": ["workday", "night", "deep-night"],
-    "scheduleTags": ["focus", "open"],
+    "genres": [
+      "jazz"
+    ],
+    "moods": [
+      "focus",
+      "breath",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "clear"
+    ],
+    "dayParts": [
+      "workday",
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "focus",
+      "open"
+    ],
     "energy": 36,
     "era": "late-night-wisdom",
     "duration": 545
@@ -368,11 +783,27 @@
     "title": "Naima",
     "artist": "John Coltrane",
     "query": "Naima John Coltrane",
-    "genres": ["jazz"],
-    "moods": ["breath", "blue", "recover"],
-    "weather": ["rain", "cloudy", "cold"],
-    "dayParts": ["night", "deep-night"],
-    "scheduleTags": ["recovery", "open"],
+    "genres": [
+      "jazz"
+    ],
+    "moods": [
+      "breath",
+      "blue",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
     "energy": 22,
     "era": "late-night-wisdom",
     "duration": 263
@@ -382,11 +813,29 @@
     "title": "Peace Piece",
     "artist": "Bill Evans",
     "query": "Peace Piece Bill Evans",
-    "genres": ["jazz"],
-    "moods": ["breath", "focus", "recover"],
-    "weather": ["rain", "cloudy", "cold"],
-    "dayParts": ["morning", "workday", "deep-night"],
-    "scheduleTags": ["focus", "recovery", "open"],
+    "genres": [
+      "jazz"
+    ],
+    "moods": [
+      "breath",
+      "focus",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "morning",
+      "workday",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "focus",
+      "recovery",
+      "open"
+    ],
     "energy": 16,
     "era": "late-night-wisdom",
     "duration": 402
@@ -396,13 +845,1519 @@
     "title": "Almost Blue",
     "artist": "Chet Baker",
     "query": "Almost Blue Chet Baker",
-    "genres": ["jazz"],
-    "moods": ["blue", "breath", "recover"],
-    "weather": ["rain", "cloudy", "cold"],
-    "dayParts": ["night", "deep-night"],
-    "scheduleTags": ["recovery", "open"],
+    "genres": [
+      "jazz"
+    ],
+    "moods": [
+      "blue",
+      "breath",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
     "energy": 20,
     "era": "late-night-wisdom",
     "duration": 251
+  },
+  {
+    "id": "metallica-one",
+    "title": "One",
+    "artist": "Metallica",
+    "query": "One Metallica",
+    "genres": [
+      "metal",
+      "classic-rock"
+    ],
+    "moods": [
+      "blue",
+      "drive",
+      "focus"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "focus",
+      "recovery"
+    ],
+    "energy": 72,
+    "era": "young-fire",
+    "duration": 447
+  },
+  {
+    "id": "metallica-the-unforgiven",
+    "title": "The Unforgiven",
+    "artist": "Metallica",
+    "query": "The Unforgiven Metallica",
+    "genres": [
+      "metal",
+      "classic-rock"
+    ],
+    "moods": [
+      "blue",
+      "breath"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 55,
+    "era": "young-fire",
+    "duration": 387
+  },
+  {
+    "id": "metallica-fade-to-black",
+    "title": "Fade To Black",
+    "artist": "Metallica",
+    "query": "Fade To Black Metallica",
+    "genres": [
+      "metal",
+      "classic-rock"
+    ],
+    "moods": [
+      "blue",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery"
+    ],
+    "energy": 58,
+    "era": "young-fire",
+    "duration": 417
+  },
+  {
+    "id": "gnr-sweet-child-o-mine",
+    "title": "Sweet Child O' Mine",
+    "artist": "Guns N' Roses",
+    "query": "Sweet Child O' Mine Guns N' Roses",
+    "genres": [
+      "hard-rock",
+      "classic-rock"
+    ],
+    "moods": [
+      "bright",
+      "drive",
+      "fire"
+    ],
+    "weather": [
+      "clear",
+      "cloudy"
+    ],
+    "dayParts": [
+      "morning",
+      "dusk"
+    ],
+    "scheduleTags": [
+      "bright",
+      "social",
+      "open"
+    ],
+    "energy": 78,
+    "era": "young-fire",
+    "duration": 356
+  },
+  {
+    "id": "gnr-dont-cry",
+    "title": "Don't Cry",
+    "artist": "Guns N' Roses",
+    "query": "Don't Cry Guns N' Roses",
+    "genres": [
+      "hard-rock",
+      "classic-rock"
+    ],
+    "moods": [
+      "blue",
+      "breath"
+    ],
+    "weather": [
+      "rain",
+      "cloudy"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 48,
+    "era": "young-fire",
+    "duration": 284
+  },
+  {
+    "id": "gnr-patience",
+    "title": "Patience",
+    "artist": "Guns N' Roses",
+    "query": "Patience Guns N' Roses",
+    "genres": [
+      "hard-rock",
+      "folk-rock"
+    ],
+    "moods": [
+      "breath",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "clear"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 36,
+    "era": "young-fire",
+    "duration": 356
+  },
+  {
+    "id": "queen-bohemian-rhapsody",
+    "title": "Bohemian Rhapsody",
+    "artist": "Queen",
+    "query": "Bohemian Rhapsody Queen",
+    "genres": [
+      "classic-rock",
+      "progressive-rock"
+    ],
+    "moods": [
+      "drive",
+      "blue",
+      "fire"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "clear"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "open",
+      "social"
+    ],
+    "energy": 72,
+    "era": "young-fire",
+    "duration": 354
+  },
+  {
+    "id": "queen-love-of-my-life",
+    "title": "Love Of My Life",
+    "artist": "Queen",
+    "query": "Love Of My Life Queen",
+    "genres": [
+      "classic-rock",
+      "pop-vocal"
+    ],
+    "moods": [
+      "breath",
+      "blue",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 28,
+    "era": "young-fire",
+    "duration": 219
+  },
+  {
+    "id": "queen-we-are-the-champions",
+    "title": "We Are The Champions",
+    "artist": "Queen",
+    "query": "We Are The Champions Queen",
+    "genres": [
+      "classic-rock"
+    ],
+    "moods": [
+      "bright",
+      "drive"
+    ],
+    "weather": [
+      "clear",
+      "cloudy"
+    ],
+    "dayParts": [
+      "morning",
+      "dusk"
+    ],
+    "scheduleTags": [
+      "bright",
+      "social"
+    ],
+    "energy": 66,
+    "era": "young-fire",
+    "duration": 179
+  },
+  {
+    "id": "nirvana-smells-like-teen-spirit",
+    "title": "Smells Like Teen Spirit",
+    "artist": "Nirvana",
+    "query": "Smells Like Teen Spirit Nirvana",
+    "genres": [
+      "grunge",
+      "alternative-rock"
+    ],
+    "moods": [
+      "fire",
+      "drive"
+    ],
+    "weather": [
+      "windy",
+      "cloudy"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "training",
+      "social"
+    ],
+    "energy": 86,
+    "era": "young-fire",
+    "duration": 301
+  },
+  {
+    "id": "nirvana-lithium",
+    "title": "Lithium",
+    "artist": "Nirvana",
+    "query": "Lithium Nirvana",
+    "genres": [
+      "grunge",
+      "alternative-rock"
+    ],
+    "moods": [
+      "blue",
+      "drive"
+    ],
+    "weather": [
+      "rain",
+      "cloudy"
+    ],
+    "dayParts": [
+      "workday",
+      "night"
+    ],
+    "scheduleTags": [
+      "focus",
+      "recovery"
+    ],
+    "energy": 64,
+    "era": "young-fire",
+    "duration": 257
+  },
+  {
+    "id": "pink-floyd-comfortably-numb",
+    "title": "Comfortably Numb",
+    "artist": "Pink Floyd",
+    "query": "Comfortably Numb Pink Floyd",
+    "genres": [
+      "progressive-rock",
+      "classic-rock"
+    ],
+    "moods": [
+      "blue",
+      "breath"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 45,
+    "era": "middle-calm",
+    "duration": 382
+  },
+  {
+    "id": "pink-floyd-shine-on",
+    "title": "Shine On You Crazy Diamond",
+    "artist": "Pink Floyd",
+    "query": "Shine On You Crazy Diamond Pink Floyd",
+    "genres": [
+      "progressive-rock",
+      "classic-rock"
+    ],
+    "moods": [
+      "breath",
+      "focus",
+      "blue"
+    ],
+    "weather": [
+      "clear",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "focus",
+      "recovery",
+      "open"
+    ],
+    "energy": 34,
+    "era": "middle-calm",
+    "duration": 810
+  },
+  {
+    "id": "pink-floyd-high-hopes",
+    "title": "High Hopes",
+    "artist": "Pink Floyd",
+    "query": "High Hopes Pink Floyd",
+    "genres": [
+      "progressive-rock",
+      "classic-rock"
+    ],
+    "moods": [
+      "blue",
+      "recover",
+      "breath"
+    ],
+    "weather": [
+      "rain",
+      "cloudy"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 44,
+    "era": "middle-calm",
+    "duration": 421
+  },
+  {
+    "id": "acdc-highway-to-hell",
+    "title": "Highway To Hell",
+    "artist": "AC/DC",
+    "query": "Highway To Hell AC/DC",
+    "genres": [
+      "hard-rock",
+      "classic-rock"
+    ],
+    "moods": [
+      "fire",
+      "drive"
+    ],
+    "weather": [
+      "clear",
+      "hot",
+      "windy"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "training",
+      "social"
+    ],
+    "energy": 84,
+    "era": "young-fire",
+    "duration": 208
+  },
+  {
+    "id": "acdc-thunderstruck",
+    "title": "Thunderstruck",
+    "artist": "AC/DC",
+    "query": "Thunderstruck AC/DC",
+    "genres": [
+      "hard-rock",
+      "classic-rock"
+    ],
+    "moods": [
+      "fire",
+      "drive"
+    ],
+    "weather": [
+      "windy",
+      "clear"
+    ],
+    "dayParts": [
+      "morning",
+      "dusk"
+    ],
+    "scheduleTags": [
+      "training",
+      "social"
+    ],
+    "energy": 90,
+    "era": "young-fire",
+    "duration": 292
+  },
+  {
+    "id": "dido-white-flag",
+    "title": "White Flag",
+    "artist": "Dido",
+    "query": "White Flag Dido",
+    "genres": [
+      "pop-vocal"
+    ],
+    "moods": [
+      "blue",
+      "breath",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 42,
+    "era": "middle-calm",
+    "duration": 240
+  },
+  {
+    "id": "dido-here-with-me",
+    "title": "Here With Me",
+    "artist": "Dido",
+    "query": "Here With Me Dido",
+    "genres": [
+      "pop-vocal"
+    ],
+    "moods": [
+      "breath",
+      "blue"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 34,
+    "era": "middle-calm",
+    "duration": 255
+  },
+  {
+    "id": "adele-someone-like-you",
+    "title": "Someone Like You",
+    "artist": "Adele",
+    "query": "Someone Like You Adele",
+    "genres": [
+      "pop-vocal"
+    ],
+    "moods": [
+      "blue",
+      "breath",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 30,
+    "era": "middle-calm",
+    "duration": 285
+  },
+  {
+    "id": "adele-hello",
+    "title": "Hello",
+    "artist": "Adele",
+    "query": "Hello Adele",
+    "genres": [
+      "pop-vocal"
+    ],
+    "moods": [
+      "blue",
+      "drive"
+    ],
+    "weather": [
+      "rain",
+      "cloudy"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 55,
+    "era": "middle-calm",
+    "duration": 295
+  },
+  {
+    "id": "ado-ashura-chan",
+    "title": "阿修羅ちゃん",
+    "artist": "Ado",
+    "query": "阿修羅ちゃん Ado",
+    "genres": [
+      "j-rock",
+      "alternative-rock"
+    ],
+    "moods": [
+      "fire",
+      "drive"
+    ],
+    "weather": [
+      "windy",
+      "cloudy"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "training",
+      "social"
+    ],
+    "energy": 86,
+    "era": "middle-calm",
+    "duration": 195
+  },
+  {
+    "id": "ado-readymade",
+    "title": "レディメイド",
+    "artist": "Ado",
+    "query": "レディメイド Ado",
+    "genres": [
+      "j-rock",
+      "alternative-rock"
+    ],
+    "moods": [
+      "fire",
+      "drive"
+    ],
+    "weather": [
+      "windy",
+      "cloudy"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "training",
+      "social"
+    ],
+    "energy": 82,
+    "era": "middle-calm",
+    "duration": 244
+  },
+  {
+    "id": "ado-odo",
+    "title": "踊",
+    "artist": "Ado",
+    "query": "踊 Ado",
+    "genres": [
+      "j-rock",
+      "pop-vocal"
+    ],
+    "moods": [
+      "fire",
+      "drive",
+      "bright"
+    ],
+    "weather": [
+      "clear",
+      "windy"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "training",
+      "social"
+    ],
+    "energy": 88,
+    "era": "middle-calm",
+    "duration": 210
+  },
+  {
+    "id": "linkin-park-in-the-end",
+    "title": "In The End",
+    "artist": "Linkin Park",
+    "query": "In The End Linkin Park",
+    "genres": [
+      "alternative-rock",
+      "hard-rock"
+    ],
+    "moods": [
+      "drive",
+      "blue"
+    ],
+    "weather": [
+      "rain",
+      "cloudy"
+    ],
+    "dayParts": [
+      "workday",
+      "night"
+    ],
+    "scheduleTags": [
+      "focus",
+      "recovery"
+    ],
+    "energy": 73,
+    "era": "young-fire",
+    "duration": 216
+  },
+  {
+    "id": "linkin-park-breaking-the-habit",
+    "title": "Breaking The Habit",
+    "artist": "Linkin Park",
+    "query": "Breaking The Habit Linkin Park",
+    "genres": [
+      "alternative-rock"
+    ],
+    "moods": [
+      "blue",
+      "drive"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "focus"
+    ],
+    "energy": 68,
+    "era": "young-fire",
+    "duration": 196
+  },
+  {
+    "id": "aerosmith-miss-a-thing",
+    "title": "I Don't Want To Miss A Thing",
+    "artist": "Aerosmith",
+    "query": "I Don't Want To Miss A Thing Aerosmith",
+    "genres": [
+      "hard-rock",
+      "pop-vocal"
+    ],
+    "moods": [
+      "blue",
+      "breath",
+      "drive"
+    ],
+    "weather": [
+      "rain",
+      "cloudy"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "social"
+    ],
+    "energy": 58,
+    "era": "young-fire",
+    "duration": 299
+  },
+  {
+    "id": "ikimono-yell",
+    "title": "YELL",
+    "artist": "いきものがかり",
+    "query": "YELL いきものがかり",
+    "genres": [
+      "j-rock",
+      "pop-vocal"
+    ],
+    "moods": [
+      "breath",
+      "blue",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "clear"
+    ],
+    "dayParts": [
+      "morning",
+      "dusk"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 46,
+    "era": "middle-calm",
+    "duration": 358
+  },
+  {
+    "id": "ikimono-arigatou",
+    "title": "ありがとう",
+    "artist": "いきものがかり",
+    "query": "ありがとう いきものがかり",
+    "genres": [
+      "j-rock",
+      "pop-vocal"
+    ],
+    "moods": [
+      "breath",
+      "bright",
+      "recover"
+    ],
+    "weather": [
+      "clear",
+      "cloudy"
+    ],
+    "dayParts": [
+      "morning",
+      "dusk"
+    ],
+    "scheduleTags": [
+      "family",
+      "bright",
+      "open"
+    ],
+    "energy": 52,
+    "era": "middle-calm",
+    "duration": 359
+  },
+  {
+    "id": "wangfeng-spring",
+    "title": "春天里",
+    "artist": "汪峰",
+    "query": "春天里 汪峰",
+    "genres": [
+      "mandarin-rock",
+      "folk-rock"
+    ],
+    "moods": [
+      "blue",
+      "drive"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "clear"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 62,
+    "era": "middle-calm",
+    "duration": 279
+  },
+  {
+    "id": "wangfeng-life-in-full-bloom",
+    "title": "怒放的生命",
+    "artist": "汪峰",
+    "query": "怒放的生命 汪峰",
+    "genres": [
+      "mandarin-rock"
+    ],
+    "moods": [
+      "drive",
+      "bright",
+      "fire"
+    ],
+    "weather": [
+      "clear",
+      "windy"
+    ],
+    "dayParts": [
+      "morning",
+      "dusk"
+    ],
+    "scheduleTags": [
+      "training",
+      "bright"
+    ],
+    "energy": 78,
+    "era": "middle-calm",
+    "duration": 262
+  },
+  {
+    "id": "xuwei-once-you",
+    "title": "曾经的你",
+    "artist": "许巍",
+    "query": "曾经的你 许巍",
+    "genres": [
+      "mandarin-rock",
+      "folk-rock"
+    ],
+    "moods": [
+      "breath",
+      "drive",
+      "blue"
+    ],
+    "weather": [
+      "clear",
+      "cloudy"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "open",
+      "recovery"
+    ],
+    "energy": 58,
+    "era": "middle-calm",
+    "duration": 278
+  },
+  {
+    "id": "xuwei-hometown",
+    "title": "故乡",
+    "artist": "许巍",
+    "query": "故乡 许巍",
+    "genres": [
+      "mandarin-rock",
+      "folk-rock"
+    ],
+    "moods": [
+      "blue",
+      "breath",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 44,
+    "era": "middle-calm",
+    "duration": 325
+  },
+  {
+    "id": "songdongye-miss-dong",
+    "title": "董小姐",
+    "artist": "宋冬野",
+    "query": "董小姐 宋冬野",
+    "genres": [
+      "folk-rock"
+    ],
+    "moods": [
+      "breath",
+      "blue"
+    ],
+    "weather": [
+      "rain",
+      "cloudy"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 35,
+    "era": "middle-calm",
+    "duration": 315
+  },
+  {
+    "id": "songdongye-zebra",
+    "title": "斑马斑马",
+    "artist": "宋冬野",
+    "query": "斑马斑马 宋冬野",
+    "genres": [
+      "folk-rock"
+    ],
+    "moods": [
+      "blue",
+      "breath",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 32,
+    "era": "middle-calm",
+    "duration": 250
+  },
+  {
+    "id": "songdongye-lillian",
+    "title": "莉莉安",
+    "artist": "宋冬野",
+    "query": "莉莉安 宋冬野",
+    "genres": [
+      "folk-rock"
+    ],
+    "moods": [
+      "blue",
+      "breath"
+    ],
+    "weather": [
+      "rain",
+      "cloudy"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 38,
+    "era": "middle-calm",
+    "duration": 276
+  },
+  {
+    "id": "beyond-boundless-oceans",
+    "title": "海阔天空",
+    "artist": "Beyond",
+    "query": "海阔天空 Beyond",
+    "genres": [
+      "mandarin-rock",
+      "classic-rock"
+    ],
+    "moods": [
+      "drive",
+      "blue",
+      "bright"
+    ],
+    "weather": [
+      "clear",
+      "cloudy"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "open",
+      "bright"
+    ],
+    "energy": 72,
+    "era": "young-fire",
+    "duration": 326
+  },
+  {
+    "id": "beyond-glorious-years",
+    "title": "光辉岁月",
+    "artist": "Beyond",
+    "query": "光辉岁月 Beyond",
+    "genres": [
+      "mandarin-rock",
+      "classic-rock"
+    ],
+    "moods": [
+      "drive",
+      "bright"
+    ],
+    "weather": [
+      "clear",
+      "cloudy"
+    ],
+    "dayParts": [
+      "morning",
+      "dusk"
+    ],
+    "scheduleTags": [
+      "bright",
+      "open"
+    ],
+    "energy": 70,
+    "era": "young-fire",
+    "duration": 309
+  },
+  {
+    "id": "bach-air",
+    "title": "Air On The G String",
+    "artist": "Johann Sebastian Bach",
+    "query": "Air On The G String Bach",
+    "genres": [
+      "classical"
+    ],
+    "moods": [
+      "breath",
+      "recover",
+      "focus"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "clear"
+    ],
+    "dayParts": [
+      "morning",
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "focus",
+      "recovery",
+      "open"
+    ],
+    "energy": 18,
+    "era": "late-night-wisdom",
+    "duration": 330
+  },
+  {
+    "id": "mozart-piano-concerto-21-andante",
+    "title": "Piano Concerto No. 21: Andante",
+    "artist": "Wolfgang Amadeus Mozart",
+    "query": "Mozart Piano Concerto 21 Andante",
+    "genres": [
+      "classical"
+    ],
+    "moods": [
+      "breath",
+      "focus",
+      "recover"
+    ],
+    "weather": [
+      "clear",
+      "cloudy"
+    ],
+    "dayParts": [
+      "morning",
+      "workday",
+      "night"
+    ],
+    "scheduleTags": [
+      "focus",
+      "open"
+    ],
+    "energy": 24,
+    "era": "late-night-wisdom",
+    "duration": 420
+  },
+  {
+    "id": "beethoven-moonlight-sonata",
+    "title": "Moonlight Sonata: I. Adagio sostenuto",
+    "artist": "Ludwig van Beethoven",
+    "query": "Moonlight Sonata Beethoven Adagio sostenuto",
+    "genres": [
+      "classical"
+    ],
+    "moods": [
+      "blue",
+      "breath",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 16,
+    "era": "late-night-wisdom",
+    "duration": 360
+  },
+  {
+    "id": "chopin-nocturne-op9-2",
+    "title": "Nocturne Op. 9 No. 2",
+    "artist": "Frederic Chopin",
+    "query": "Chopin Nocturne Op 9 No 2",
+    "genres": [
+      "classical",
+      "neo-classical"
+    ],
+    "moods": [
+      "breath",
+      "recover",
+      "blue"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "clear"
+    ],
+    "dayParts": [
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 14,
+    "era": "late-night-wisdom",
+    "duration": 270
+  },
+  {
+    "id": "ravel-pavane",
+    "title": "Pavane pour une infante defunte",
+    "artist": "Maurice Ravel",
+    "query": "Ravel Pavane pour une infante defunte",
+    "genres": [
+      "classical"
+    ],
+    "moods": [
+      "breath",
+      "blue",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy"
+    ],
+    "dayParts": [
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 20,
+    "era": "late-night-wisdom",
+    "duration": 380
+  },
+  {
+    "id": "dave-brubeck-take-five",
+    "title": "Take Five",
+    "artist": "The Dave Brubeck Quartet",
+    "query": "Take Five Dave Brubeck Quartet",
+    "genres": [
+      "jazz"
+    ],
+    "moods": [
+      "focus",
+      "drive",
+      "breath"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "clear"
+    ],
+    "dayParts": [
+      "workday",
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "focus",
+      "open"
+    ],
+    "energy": 52,
+    "era": "late-night-wisdom",
+    "duration": 324
+  },
+  {
+    "id": "miles-davis-blue-in-green",
+    "title": "Blue In Green",
+    "artist": "Miles Davis",
+    "query": "Blue In Green Miles Davis",
+    "genres": [
+      "jazz"
+    ],
+    "moods": [
+      "blue",
+      "breath",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 18,
+    "era": "late-night-wisdom",
+    "duration": 337
+  },
+  {
+    "id": "chet-baker-my-funny-valentine",
+    "title": "My Funny Valentine",
+    "artist": "Chet Baker",
+    "query": "My Funny Valentine Chet Baker",
+    "genres": [
+      "jazz"
+    ],
+    "moods": [
+      "blue",
+      "breath",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 22,
+    "era": "late-night-wisdom",
+    "duration": 143
+  },
+  {
+    "id": "monk-round-midnight",
+    "title": "'Round Midnight",
+    "artist": "Thelonious Monk",
+    "query": "Round Midnight Thelonious Monk",
+    "genres": [
+      "jazz"
+    ],
+    "moods": [
+      "blue",
+      "focus",
+      "breath"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "focus",
+      "recovery"
+    ],
+    "energy": 28,
+    "era": "late-night-wisdom",
+    "duration": 368
+  },
+  {
+    "id": "duke-coltrane-sentimental-mood",
+    "title": "In A Sentimental Mood",
+    "artist": "Duke Ellington & John Coltrane",
+    "query": "In A Sentimental Mood Duke Ellington John Coltrane",
+    "genres": [
+      "jazz"
+    ],
+    "moods": [
+      "breath",
+      "blue",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 20,
+    "era": "late-night-wisdom",
+    "duration": 255
+  },
+  {
+    "id": "srV-sky-is-crying",
+    "title": "The Sky Is Crying",
+    "artist": "Stevie Ray Vaughan",
+    "query": "The Sky Is Crying Stevie Ray Vaughan",
+    "genres": [
+      "blues"
+    ],
+    "moods": [
+      "blue",
+      "drive",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 50,
+    "era": "late-night-wisdom",
+    "duration": 281
+  },
+  {
+    "id": "etta-james-rather-go-blind",
+    "title": "I'd Rather Go Blind",
+    "artist": "Etta James",
+    "query": "I'd Rather Go Blind Etta James",
+    "genres": [
+      "blues",
+      "pop-vocal"
+    ],
+    "moods": [
+      "blue",
+      "breath",
+      "recover"
+    ],
+    "weather": [
+      "rain",
+      "cloudy",
+      "cold"
+    ],
+    "dayParts": [
+      "night",
+      "deep-night"
+    ],
+    "scheduleTags": [
+      "recovery",
+      "open"
+    ],
+    "energy": 34,
+    "era": "late-night-wisdom",
+    "duration": 157
+  },
+  {
+    "id": "muddy-waters-mannish-boy",
+    "title": "Mannish Boy",
+    "artist": "Muddy Waters",
+    "query": "Mannish Boy Muddy Waters",
+    "genres": [
+      "blues"
+    ],
+    "moods": [
+      "drive",
+      "fire"
+    ],
+    "weather": [
+      "clear",
+      "windy",
+      "hot"
+    ],
+    "dayParts": [
+      "dusk",
+      "night"
+    ],
+    "scheduleTags": [
+      "social",
+      "training"
+    ],
+    "energy": 68,
+    "era": "late-night-wisdom",
+    "duration": 320
   }
 ]

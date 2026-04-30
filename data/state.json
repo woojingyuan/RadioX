@@ -1,16 +1,460 @@
 {
   "mood": "breath",
   "weather": "clear",
-  "intensity": 2,
-  "planText": "晚上还有一点收尾工作，想保持呼吸，不想太吵。",
+  "intensity": 3,
+  "planText": "这首曲子很适合这个时候播放",
   "playing": false,
   "currentIndex": 0,
-  "volume": 76,
-  "history": [],
-  "spotifyDeviceId": null,
-  "contextDate": null,
-  "updatedAt": null,
-  "queueDate": null,
-  "queueSignature": null,
-  "queueOrder": []
+  "volume": 21,
+  "history": [
+    "metallica-nothing-else-matters",
+    "linkin-park-numb",
+    "queen-under-pressure",
+    "adele-easy-on-me",
+    "wangfeng-beijing",
+    "pink-floyd-time",
+    "miles-davis-so-what",
+    "debussy-clair-de-lune",
+    "debussy-clair-de-lune",
+    "request-106c12f",
+    "request-rdk7so",
+    "pink-floyd-wish-you-were-here",
+    "request-106c12f",
+    "request-rdk7so",
+    "request-106c12f",
+    "ado-ussee-wa",
+    "satie-gymnopedie",
+    "bach-cello-suite-1",
+    "songdongye-anheqiao",
+    "queen-somebody-to-love",
+    "request-1j2b0vd",
+    "linkin-park-numb",
+    "bbking-thrill-is-gone",
+    "linkin-park-lost",
+    "coltrane-naima",
+    "adele-easy-on-me",
+    "chet-baker-almost-blue",
+    "debussy-clair-de-lune",
+    "john-lee-hooker-boom-boom",
+    "monk-round-midnight",
+    "chopin-nocturne-op9-2",
+    "ravel-pavane",
+    "xuwei-hometown",
+    "pink-floyd-shine-on",
+    "beethoven-moonlight-sonata",
+    "etta-james-rather-go-blind",
+    "chet-baker-my-funny-valentine",
+    "miles-davis-blue-in-green",
+    "duke-coltrane-sentimental-mood",
+    "mozart-piano-concerto-21-andante",
+    "linkin-park-in-the-end",
+    "request-1ybc8h8",
+    "request-1ybc8h8",
+    "bach-air",
+    "srV-sky-is-crying"
+  ],
+  "spotifyDeviceId": "1cbe74854f92e24de4dd43d36350665e2c77cc36",
+  "contextDate": "2026-04-27",
+  "updatedAt": "2026-04-30T01:07:00.639Z",
+  "queueDate": "2026-04-30",
+  "queueSignature": "3713392268",
+  "queueOrder": [
+    "queen-bohemian-rhapsody",
+    "metallica-one",
+    "nirvana-lithium",
+    "gnr-sweet-child-o-mine",
+    "beyond-glorious-years",
+    "dave-brubeck-take-five",
+    "ado-ashura-chan",
+    "muddy-waters-mannish-boy",
+    "xuwei-once-you",
+    "adele-hello"
+  ],
+  "djChat": [
+    {
+      "role": "user",
+      "text": "枪花是我大学时代就喜欢的摇滚乐队之一",
+      "at": "2026-04-29T01:25:36.868Z"
+    },
+    {
+      "role": "assistant",
+      "text": "老朋友，大学时代喜欢上的枪花，后来再听《November Rain》会特别有时间感。Axl Rose 这首近九分钟的钢琴摇滚长片，弦乐铺开、吉他 solo 拉长，像把青春里那些没说完的东西放到雨里慢慢冲洗；今天本来也是雨天，写文档处理邮件的间隙听它，倒像老同学忽然坐回你旁边。",
+      "at": "2026-04-29T01:25:40.485Z"
+    },
+    {
+      "role": "user",
+      "text": "我很喜欢摇滚歌手唱抒情歌曲，别有风味",
+      "at": "2026-04-29T02:04:36.170Z"
+    },
+    {
+      "role": "assistant",
+      "text": "老朋友，我懂你说的那种风味，摇滚歌手一唱抒情，声音里那些沙砾、棱角和倔劲不会消失，反而把柔软唱得更有重量。《November Rain》就是这样，Axl Rose 的钢琴、弦乐和后面拉长的吉他 solo，像硬壳里慢慢露出一块旧伤。雨天听它，特别像大学时代的热血没有退场，只是换了更慢的方式说话。",
+      "at": "2026-04-29T02:04:41.345Z"
+    },
+    {
+      "role": "user",
+      "text": "我还喜欢她的white flag，你还有什么类似风格的歌手推荐吗",
+      "at": "2026-04-29T02:07:28.538Z"
+    },
+    {
+      "role": "assistant",
+      "text": "喜欢《White Flag》的话，你大概会吃那种干净女声、慢速鼓点、旋律带一点倔强的流行抒情。可以试试 Adele、Sarah McLachlan、Norah Jones、Birdy，还有早期的孙燕姿；如果想更贴近 Dido 这种低声叙事感，Sade 也很适合。现在这首 Dido《Thank You》正好在雨里铺着，等会儿往这些女声方向拐，会比突然进摇滚更顺。",
+      "at": "2026-04-29T02:07:33.122Z"
+    },
+    {
+      "role": "user",
+      "text": "这首歌听起来挺安静的",
+      "at": "2026-04-29T02:07:38.646Z"
+    },
+    {
+      "role": "assistant",
+      "text": "嗯，Dido 这首《Thank You》是安静的，但不是空的；她的声音贴得很近，鼓点和旋律都收着，像雨天桌边一盏小灯。它后来因为被 Eminem 采样进《Stan》有了另一条命运，所以现在听这份温柔，会觉得背后还站着一个更大的故事。",
+      "at": "2026-04-29T02:07:41.954Z"
+    },
+    {
+      "role": "user",
+      "text": "说说主唱的故事",
+      "at": "2026-04-29T02:18:12.792Z"
+    },
+    {
+      "role": "assistant",
+      "text": "这会儿是 Linkin Park 的《Numb》，主唱 Chester Bennington 的声音特别有辨识度：不是单纯嘶吼，而是把“被期待、被控制”的窒息感唱得很锋利。你听副歌那种大合唱感，像一个人撑不住时，忽然变成很多人一起喊出来。放在你今天这种雨天、低一点的心情里，它不是轻声安慰，更像把压着的那口气照出来。",
+      "at": "2026-04-29T02:18:17.463Z"
+    },
+    {
+      "role": "user",
+      "text": "他的歌拯救了很多人，却没有人能给他救赎。哭",
+      "at": "2026-04-29T02:19:15.286Z"
+    },
+    {
+      "role": "assistant",
+      "text": "嗯，Chester 的声音确实救过很多人，尤其在《Numb》里，那种被期待压到快失去自己的感觉，被他唱成了大家都能跟着喊出来的东西。也正因为他唱得太真，听到后来会更心疼：歌把很多人的黑暗照亮了，可他自己的那一片，没能被足够温柔地留住。雨天听这首，哭一下没关系，吉他墙和合唱会陪你把这阵难受慢慢放出来。",
+      "at": "2026-04-29T02:19:19.592Z"
+    },
+    {
+      "role": "user",
+      "text": "chester是为何去世的",
+      "at": "2026-04-29T02:20:14.972Z"
+    },
+    {
+      "role": "assistant",
+      "text": "Chester Bennington 是在 2017 年 7 月 20 日去世的，官方确认是自杀身亡。说到这件事总会很沉，尤其《Numb》还在响的时候，他把被压迫、被误解、快要失去自己的感觉唱得那么清楚。也正因为这样，很多人听见的不是八卦，而是一个曾经用声音陪大家撑过黑夜的人，最后没能撑过自己的那一晚。",
+      "at": "2026-04-29T02:20:19.596Z"
+    },
+    {
+      "role": "user",
+      "text": "Ado的这首歌我很喜欢，知道她也是因为这首歌。推荐她其他的类似歌曲",
+      "at": "2026-04-29T02:35:07.877Z"
+    },
+    {
+      "role": "assistant",
+      "text": "你是被《うっせぇわ》带进 Ado 的，那就先顺着这种“压着火、突然爆开”的线走：可以听《踊》《阿修羅ちゃん》《ギラギラ》《レディメイド》《逆光》。如果你喜欢她声线里那种锋利的反叛感，《阿修羅ちゃん》和《レディメイド》会很对；如果想要更戏剧、更有画面，《ギラギラ》和《逆光》可以留到雨夜一点听。",
+      "at": "2026-04-29T02:35:13.604Z"
+    },
+    {
+      "role": "user",
+      "text": "把《阿修羅ちゃん》和《レディメイド》加入播放Queue",
+      "at": "2026-04-29T02:35:53.957Z"
+    },
+    {
+      "role": "assistant",
+      "text": "我先抓住这首歌的线头：不露脸声线掀起的反叛。你现在的情绪不用急着被拉亮。你刚才说“把《阿修羅ちゃん》和《レディメイド》加入播放Queue”，我会把它记在这一轮的对话里；如果你想，我可以顺着这句话把下一首往更安静、更硬，或者更有故事感的方向带。",
+      "at": "2026-04-29T02:35:55.053Z"
+    },
+    {
+      "role": "user",
+      "text": "把《阿修羅ちゃん》和《レディメイド》加入播放Queue",
+      "at": "2026-04-29T10:57:17.015Z"
+    },
+    {
+      "role": "assistant",
+      "text": "我先抓住这首歌的线头：从诗里长出的月光。你现在的情绪不用急着被拉亮。你刚才说“把《阿修羅ちゃん》和《レディメイド》加入播放Queue”，我会把它记在这一轮的对话里；如果你想，我可以顺着这句话把下一首往更安静、更硬，或者更有故事感的方向带。 我已经把《阿修羅ちゃん》、《レディメイド》放进 Queue，排在当前曲目后面。",
+      "at": "2026-04-29T10:57:18.074Z"
+    },
+    {
+      "role": "user",
+      "text": "我很喜欢这种舒缓的曲子，能推荐其他类似的曲子吗",
+      "at": "2026-04-29T11:04:42.278Z"
+    },
+    {
+      "role": "assistant",
+      "text": "我先抓住这首歌的线头：极简之前的安静叛逆。你现在的情绪不用急着被拉亮。你刚才说“我很喜欢这种舒缓的曲子，能推荐其他类似的曲子吗”，我会把它记在这一轮的对话里；如果你想，我可以顺着这句话把下一首往更安静、更硬，或者更有故事感的方向带。",
+      "at": "2026-04-29T11:04:43.056Z"
+    },
+    {
+      "role": "user",
+      "text": "类似Erik Satie 的 Gymnopedie No. 1的曲子",
+      "at": "2026-04-29T11:05:18.646Z"
+    },
+    {
+      "role": "assistant",
+      "text": "我先抓住这首歌的线头：极简之前的安静叛逆。你现在的情绪不用急着被拉亮。你刚才说“类似Erik Satie 的 Gymnopedie No. 1的曲子”，我会把它记在这一轮的对话里；如果你想，我可以顺着这句话把下一首往更安静、更硬，或者更有故事感的方向带。",
+      "at": "2026-04-29T11:05:19.565Z"
+    },
+    {
+      "role": "user",
+      "text": "请推荐J. S. Bach 的 Cello Suite No. 1: Prelude类似的曲子",
+      "at": "2026-04-29T11:06:21.060Z"
+    },
+    {
+      "role": "assistant",
+      "text": "我先抓住这首歌的线头：沉睡手稿被重新点亮。你现在的情绪不用急着被拉亮。你刚才说“请推荐J. S. Bach 的 Cello Suite No. 1: Prelude类似的曲子”，我会把它记在这一轮的对话里；如果你想，我可以顺着这句话把下一首往更安静、更硬，或者更有故事感的方向带。",
+      "at": "2026-04-29T11:06:22.130Z"
+    },
+    {
+      "role": "user",
+      "text": "推荐其他宋冬野的歌曲",
+      "at": "2026-04-29T11:06:50.818Z"
+    },
+    {
+      "role": "assistant",
+      "text": "我先抓住这首歌的线头：地名里的私人记忆。你现在的情绪不用急着被拉亮。你刚才说“推荐其他宋冬野的歌曲”，我会把它记在这一轮的对话里；如果你想，我可以顺着这句话把下一首往更安静、更硬，或者更有故事感的方向带。",
+      "at": "2026-04-29T11:06:51.456Z"
+    },
+    {
+      "role": "user",
+      "text": "推荐其他宋冬野的歌曲",
+      "at": "2026-04-29T11:07:07.702Z"
+    },
+    {
+      "role": "assistant",
+      "text": "我先抓住这首歌的线头：地名里的私人记忆。你现在的情绪不用急着被拉亮。你刚才说“推荐其他宋冬野的歌曲”，我会把它记在这一轮的对话里；如果你想，我可以顺着这句话把下一首往更安静、更硬，或者更有故事感的方向带。",
+      "at": "2026-04-29T11:07:08.607Z"
+    },
+    {
+      "role": "user",
+      "text": "推荐类似的民谣",
+      "at": "2026-04-29T11:07:42.307Z"
+    },
+    {
+      "role": "assistant",
+      "text": "我先抓住这首歌的线头：地名里的私人记忆。你现在的情绪不用急着被拉亮。你刚才说“推荐类似的民谣”，我会把它记在这一轮的对话里；如果你想，我可以顺着这句话把下一首往更安静、更硬，或者更有故事感的方向带。",
+      "at": "2026-04-29T11:07:43.030Z"
+    },
+    {
+      "role": "user",
+      "text": "推荐其他的Queen歌曲",
+      "at": "2026-04-29T11:18:39.232Z"
+    },
+    {
+      "role": "assistant",
+      "text": "可以顺着《Somebody To Love》这股“大合唱的心事”听 Queen：先来《Bohemian Rhapsody》，戏剧感更满；再放《Love Of My Life》，雨夜里会软很多；如果想要一点坚定的步子，就听《We Are The Champions》。今晚横滨小雨，你也可以试试《Who Wants To Live Forever》，声音一铺开，适合写完文档后慢慢收尾。",
+      "at": "2026-04-29T11:18:43.325Z"
+    },
+    {
+      "role": "user",
+      "text": "把Bohemian Rhapsody加入播放列表",
+      "at": "2026-04-29T11:19:05.277Z"
+    },
+    {
+      "role": "assistant",
+      "text": "好，我把《Bohemian Rhapsody》记进这轮播放列表方向里，接在《Somebody To Love》后面很顺：一个是 Freddie 把福音感叠成大合唱，另一个就更像 Queen 把戏剧、摇滚和情绪一起推上舞台。横滨这会儿小雨，前半段慢慢展开，后面再让吉他和合声把夜色掀起来一点。 我已经把《列表》、《Bohemian Rhapsody》放进 Queue，排在当前曲目后面。",
+      "at": "2026-04-29T11:19:09.528Z"
+    },
+    {
+      "role": "user",
+      "text": "能给我推荐其他Linkin Park的歌吗",
+      "at": "2026-04-29T12:28:37.632Z"
+    },
+    {
+      "role": "assistant",
+      "text": "可以，顺着现在这首《In The End》的重量走，我会先推《Numb》，那种被压着往前走的感觉很近；再听《Somewhere I Belong》，吉他和鼓会更有出口；如果今晚想慢一点，就放《Breaking the Habit》，声音更冷、更适合横滨这种多云的夜。晚一点要是你还想沉下去，《Shadow of the Day》也可以接在后面。",
+      "at": "2026-04-29T12:28:42.470Z"
+    },
+    {
+      "role": "user",
+      "text": "请把Somewhere I Belong这首歌加入播放列表",
+      "at": "2026-04-29T12:29:13.032Z"
+    },
+    {
+      "role": "assistant",
+      "text": "好，把 Linkin Park 的《Somewhere I Belong》放进这轮播放队列里，接在《In The End》后面很合适：前一首把重量压住，后一首像是终于开始往外找出口。横滨这个多云的夜里，吉他进来的时候会比口头安慰更直接。",
+      "at": "2026-04-29T12:29:16.878Z"
+    }
+  ],
+  "recommendationHistory": {
+    "linkin-park-lost": "2026-04-29",
+    "nirvana-come-as-you-are": "2026-04-28",
+    "ikimono-sakura": "2026-04-28",
+    "wangfeng-beijing": "2026-04-29",
+    "gnr-november-rain": "2026-04-29",
+    "dido-thank-you": "2026-04-29",
+    "adele-easy-on-me": "2026-04-29",
+    "ado-ussee-wa": "2026-04-29",
+    "queen-somebody-to-love": "2026-04-29",
+    "huichundan-flowers": "2026-04-28",
+    "queen-under-pressure": "2026-04-29",
+    "pink-floyd-wish-you-were-here": "2026-04-29",
+    "linkin-park-numb": "2026-04-29",
+    "metallica-nothing-else-matters": "2026-04-29",
+    "xuwei-blue-lotus": "2026-04-28",
+    "acdc-back-in-black": "2026-04-28",
+    "john-lee-hooker-boom-boom": "2026-04-29",
+    "metallica-enter-sandman": "2026-04-28",
+    "miles-davis-so-what": "2026-04-29",
+    "bach-cello-suite-1": "2026-04-29",
+    "bill-evans-peace-piece": "2026-04-29",
+    "pink-floyd-time": "2026-04-29",
+    "satie-gymnopedie": "2026-04-29",
+    "aerosmith-dream-on": "2026-04-28",
+    "debussy-clair-de-lune": "2026-04-29",
+    "chet-baker-almost-blue": "2026-04-29",
+    "songdongye-anheqiao": "2026-04-29",
+    "bbking-thrill-is-gone": "2026-04-29",
+    "coltrane-naima": "2026-04-29",
+    "request-106c12f": "2026-04-29",
+    "request-rdk7so": "2026-04-29",
+    "request-1j2b0vd": "2026-04-29",
+    "monk-round-midnight": "2026-04-29",
+    "chopin-nocturne-op9-2": "2026-04-29",
+    "ravel-pavane": "2026-04-29",
+    "xuwei-hometown": "2026-04-29",
+    "pink-floyd-shine-on": "2026-04-29",
+    "beethoven-moonlight-sonata": "2026-04-29",
+    "etta-james-rather-go-blind": "2026-04-29",
+    "chet-baker-my-funny-valentine": "2026-04-29",
+    "miles-davis-blue-in-green": "2026-04-29",
+    "duke-coltrane-sentimental-mood": "2026-04-29",
+    "mozart-piano-concerto-21-andante": "2026-04-29",
+    "linkin-park-in-the-end": "2026-04-29",
+    "request-1ybc8h8": "2026-04-29",
+    "bach-air": "2026-04-29",
+    "srV-sky-is-crying": "2026-04-29"
+  },
+  "favoriteIds": [
+    "acdc-back-in-black",
+    "pink-floyd-time",
+    "miles-davis-so-what",
+    "debussy-clair-de-lune",
+    "linkin-park-numb",
+    "john-lee-hooker-boom-boom"
+  ],
+  "favoriteRequest": {
+    "trackId": "debussy-clair-de-lune",
+    "favorite": true,
+    "source": "toolbar",
+    "requestedAt": "2026-04-29T10:48:28.550Z"
+  },
+  "customTracks": [
+    {
+      "id": "request-106c12f",
+      "title": "阿修羅ちゃん",
+      "artist": "Spotify Request",
+      "query": "阿修羅ちゃん",
+      "genres": [
+        "listener-request"
+      ],
+      "moods": [
+        "blue"
+      ],
+      "weather": [
+        "rain",
+        "cloudy"
+      ],
+      "dayParts": [
+        "night"
+      ],
+      "scheduleTags": [
+        "focus"
+      ],
+      "energy": 27,
+      "era": "middle-calm",
+      "duration": 240,
+      "requestedAt": "2026-04-29T10:57:17.025Z",
+      "story": {
+        "headline": "对话里点进来的歌",
+        "text": "阿修羅ちゃん 是你刚刚在对话里点名想听的歌。RadioX 会先排进队列，再让 Spotify 找最合适的版本。"
+      }
+    },
+    {
+      "id": "request-rdk7so",
+      "title": "レディメイド",
+      "artist": "Spotify Request",
+      "query": "レディメイド",
+      "genres": [
+        "listener-request"
+      ],
+      "moods": [
+        "blue"
+      ],
+      "weather": [
+        "rain",
+        "cloudy"
+      ],
+      "dayParts": [
+        "night"
+      ],
+      "scheduleTags": [
+        "focus"
+      ],
+      "energy": 27,
+      "era": "middle-calm",
+      "duration": 240,
+      "requestedAt": "2026-04-29T10:57:17.025Z",
+      "story": {
+        "headline": "对话里点进来的歌",
+        "text": "レディメイド 是你刚刚在对话里点名想听的歌。RadioX 会先排进队列，再让 Spotify 找最合适的版本。"
+      }
+    },
+    {
+      "id": "request-1j2b0vd",
+      "title": "Bohemian Rhapsody",
+      "artist": "Spotify Request",
+      "query": "Bohemian Rhapsody",
+      "genres": [
+        "listener-request"
+      ],
+      "moods": [
+        "blue"
+      ],
+      "weather": [
+        "rain",
+        "cloudy"
+      ],
+      "dayParts": [
+        "night"
+      ],
+      "scheduleTags": [
+        "focus"
+      ],
+      "energy": 27,
+      "era": "middle-calm",
+      "duration": 240,
+      "requestedAt": "2026-04-29T11:19:05.280Z",
+      "story": {
+        "headline": "对话里点进来的歌",
+        "text": "Bohemian Rhapsody 是你刚刚在对话里点名想听的歌。RadioX 会先排进队列，再让 Spotify 找最合适的版本。"
+      }
+    },
+    {
+      "id": "request-1ybc8h8",
+      "title": "Somewhere I Belong这首歌",
+      "artist": "Spotify Request",
+      "query": "Somewhere I Belong这首歌",
+      "genres": [
+        "listener-request"
+      ],
+      "moods": [
+        "blue"
+      ],
+      "weather": [
+        "cloudy"
+      ],
+      "dayParts": [
+        "night"
+      ],
+      "scheduleTags": [
+        "focus"
+      ],
+      "energy": 27,
+      "era": "middle-calm",
+      "duration": 240,
+      "requestedAt": "2026-04-29T12:29:13.038Z",
+      "story": {
+        "headline": "对话里点进来的歌",
+        "text": "Somewhere I Belong这首歌 是你刚刚在对话里点名想听的歌。RadioX 会先排进队列，再让 Spotify 找最合适的版本。"
+      }
+    }
+  ],
+  "queueGeneration": 2
 }

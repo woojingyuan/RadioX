@@ -53,7 +53,9 @@ export TTS_PROVIDER="auto"
 # Preferred when present: Inworld TTS
 export INWORLD_API_KEY="your-inworld-basic-api-key"
 export INWORLD_TTS_MODEL="inworld-tts-1.5-max"
-export INWORLD_TTS_VOICE_ID="Dennis"
+export INWORLD_TTS_LANGUAGE="zh"
+export INWORLD_TTS_GENDER="female"
+export INWORLD_TTS_VOICE_ID="Jing"
 
 # Fallback cloud TTS
 export OPENAI_TTS_MODEL="gpt-4o-mini-tts"
@@ -62,7 +64,20 @@ export OPENAI_TTS_SPEED="0.88"
 npm run dev
 ```
 
-You can also place those values in a local `.env` file. The server loads `.env` on startup, and `.env` is ignored by git. `TTS_PROVIDER=auto` prefers Inworld when `INWORLD_API_KEY` is set, otherwise it uses OpenAI TTS when configured. Set `TTS_PROVIDER=inworld` or `TTS_PROVIDER=openai` to force one provider.
+You can also place those values in a local `.env` file. The server loads `.env` on startup, and `.env` is ignored by git. `TTS_PROVIDER=auto` prefers Inworld when `INWORLD_API_KEY` is set, otherwise it uses OpenAI TTS when configured. Set `TTS_PROVIDER=inworld` or `TTS_PROVIDER=openai` to force one provider. Inworld synthesis uses `voiceId`; `INWORLD_TTS_LANGUAGE` and `INWORLD_TTS_GENDER` document the voice selection preference used when choosing a voice in the Inworld library.
+
+## OpenWeather Setup
+
+RadioX can use OpenWeather current conditions to replace the local routine weather label. Configure your OpenWeather API key and coordinates; RadioX refreshes in the background, caches the result, maps it to local tags such as `rain`, `cloudy`, `windy`, `hot`, or `cold`, and falls back to `data/routines.json` if the API is missing or unavailable.
+
+```bash
+export OPENWEATHER_API_KEY="your-openweather-api-key"
+export OPENWEATHER_LAT="35.6812"
+export OPENWEATHER_LON="139.7671"
+export OPENWEATHER_LOCATION_LABEL="Tokyo"
+export OPENWEATHER_UNITS="metric"
+export OPENWEATHER_LANG="zh_cn"
+```
 
 ## Simulated Audio
 

@@ -19,7 +19,10 @@
     "汪峰",
     "许巍",
     "宋冬野",
-    "回春丹"
+    "回春丹",
+    "Beyond",
+    "孙燕姿",
+    "张国荣"
   ],
   "currentLean": [
     "classical",
@@ -52,11 +55,21 @@
   },
   "timePreferences": {
     "night": {
-      "genres": ["classical", "jazz", "blues", "neo-classical"],
+      "genres": [
+        "classical",
+        "jazz",
+        "blues",
+        "neo-classical"
+      ],
       "boost": 18
     },
     "deep-night": {
-      "genres": ["classical", "jazz", "blues", "neo-classical"],
+      "genres": [
+        "classical",
+        "jazz",
+        "blues",
+        "neo-classical"
+      ],
       "boost": 22
     }
   }

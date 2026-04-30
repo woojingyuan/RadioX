@@ -75,11 +75,17 @@ const app = {
   expectedSpotifyUri: "",
   spotifyMismatchTimer: null,
   spotifyPrefetchTimer: null,
+  spotifyAutoAdvanceUri: "",
   audioFeaturesCache: new Map(),
+  favoriteStatusCache: new Map(),
+  favoriteSyncing: new Set(),
+  spotifyLibrarySyncDisabled: false,
   currentAudioFeatures: null,
   lastFavoriteRequestKey: localStorage.getItem("radiox.favoriteRequestKey") || "",
   spotifyState: {
+    uri: "",
     positionSeconds: 0,
+    durationSeconds: 0,
     updatedAt: 0,
     paused: true
   },
@@ -139,6 +145,16 @@ function formatMinutes(ms) {
   return Math.max(1, Math.round(ms / 60000));
 }
 
+function stableVoiceHash(value) {
+  let hash = 2166136261;
+  const text = String(value || "");
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
 function api(path, options = {}) {
   return fetch(path, {
     ...options,
@@ -154,6 +170,21 @@ function api(path, options = {}) {
 
 function saveFavorites() {
   localStorage.setItem("radiox.favorites", JSON.stringify([...app.favorites]));
+}
+
+function setLocalFavorite(trackId, favorite) {
+  if (!trackId) return;
+  if (favorite) app.favorites.add(trackId);
+  else app.favorites.delete(trackId);
+  saveFavorites();
+  updateCurrentFavoriteButton();
+}
+
+function syncFavoritesFromServer(payload) {
+  const serverIds = payload?.state?.favoriteIds;
+  if (!Array.isArray(serverIds)) return;
+  app.favorites = new Set(serverIds);
+  saveFavorites();
 }
 
 function favoriteRequestKey(request) {
@@ -181,18 +212,9 @@ function handleRemoteFavoriteRequest(payload) {
   localStorage.setItem(FAVORITE_REQUEST_KEY, key);
 
   const track = findTrackById(payload, request.trackId);
-  if (request.favorite === false) {
-    app.favorites.delete(request.trackId);
-    saveFavorites();
-    updateCurrentFavoriteButton();
-    return;
-  }
-
-  const wasFavorite = app.favorites.has(request.trackId);
-  app.favorites.add(request.trackId);
-  saveFavorites();
-  updateCurrentFavoriteButton();
-  if (!wasFavorite && track) syncFavoriteToSpotify(track).catch(console.warn);
+  const favorite = request.favorite !== false;
+  setLocalFavorite(request.trackId, favorite);
+  if (track) syncFavoriteToSpotify(track, favorite).catch(console.warn);
 }
 
 function speechSupported() {
@@ -201,6 +223,14 @@ function speechSupported() {
 
 function cloudTtsConfigured() {
   return Boolean(app.spotifyConfig?.ttsConfigured ?? app.spotifyConfig?.openAiTtsConfigured);
+}
+
+function isSpotifyLibraryPermissionError(error) {
+  return /library|permission|scope|403/i.test(error?.message || "");
+}
+
+function isSpotifyTokenError(error) {
+  return /token|expired|not authenticated|401/i.test(error?.message || "");
 }
 
 function djVoiceSupported() {
@@ -270,6 +300,16 @@ function spotifyTrackMatchesCurrent(spotifyTrack, current) {
   const artist = normalizeMatchText(String(current.artist || "").split(/\s+(?:&|and|和)\s+|,/i)[0]);
   const spotifyArtists = normalizeMatchText((spotifyTrack.artists || []).map((item) => item.name).join(" "));
   return Boolean(title && artist && (spotifyTitle.includes(title) || title.includes(spotifyTitle)) && spotifyArtists.includes(artist));
+}
+
+function resetSpotifyPlaybackTracking() {
+  app.spotifyState = {
+    uri: "",
+    positionSeconds: 0,
+    durationSeconds: 0,
+    updatedAt: 0,
+    paused: true
+  };
 }
 
 function splitVoiceParts(text) {
@@ -356,10 +396,10 @@ function cloudVoiceLabel(headerValue) {
   return "DJ VOICE";
 }
 
-async function playCloudDjVoice(payload, runId) {
+async function playCloudTextVoice(text, key, runId) {
   if (!cloudTtsConfigured()) return false;
-  const text = voiceTextFromPayload(payload);
-  if (!text) return false;
+  const spokenText = naturalizeDjText(text);
+  if (!spokenText) return false;
 
   try {
     setServerState("VOICE");
@@ -367,8 +407,8 @@ async function playCloudDjVoice(payload, runId) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        key: voiceKeyFromPayload(payload),
-        text
+        key,
+        text: spokenText
       })
     });
     if (!response.ok) throw new Error(`/api/dj-audio ${response.status}`);
@@ -403,7 +443,12 @@ async function playCloudDjVoice(payload, runId) {
   }
 }
 
-function speakBrowserDjIntro(parts, runId) {
+async function playCloudDjVoice(payload, runId) {
+  const text = voiceTextFromPayload(payload);
+  return playCloudTextVoice(text, voiceKeyFromPayload(payload), runId);
+}
+
+function speakBrowserText(parts, runId) {
   if (!speechSupported()) return;
   const voice = preferredDjVoice();
   app.voiceRestore = duckPlaybackForVoice();
@@ -436,6 +481,10 @@ function speakBrowserDjIntro(parts, runId) {
   speakPart(0);
 }
 
+function speakBrowserDjIntro(parts, runId) {
+  speakBrowserText(parts, runId);
+}
+
 async function speakDjIntro(payload, options = {}) {
   if (!app.voiceEnabled || !djVoiceSupported()) return;
   const parts = voicePartsFromPayload(payload);
@@ -451,7 +500,19 @@ async function speakDjIntro(payload, options = {}) {
   if (!ttsStarted && runId === app.voiceRunId) speakBrowserDjIntro(parts, runId);
 }
 
-async function syncFavoriteToSpotify(track) {
+async function speakDjChatReply(message) {
+  const text = naturalizeDjText(message?.text || "");
+  if (!app.voiceEnabled || !djVoiceSupported() || !text) return;
+
+  const key = `chat:${message?.at || Date.now()}:${stableVoiceHash(text)}`;
+  stopDjVoice();
+  const runId = app.voiceRunId;
+  const ttsStarted = await playCloudTextVoice(text, key, runId);
+  if (!ttsStarted && runId === app.voiceRunId) speakBrowserText(splitVoiceParts(text), runId);
+}
+
+async function syncFavoriteToSpotify(track, favorite = true) {
+  if (app.spotifyLibrarySyncDisabled) return false;
   if (!track || !app.spotify?.configured()) return false;
   if (!app.spotify.status().authenticated) {
     els.spotifyButton.textContent = "LOGIN";
@@ -459,25 +520,39 @@ async function syncFavoriteToSpotify(track) {
     return false;
   }
 
+  const syncKey = `write:${track.id}:${favorite}`;
+  if (app.favoriteSyncing.has(syncKey)) return false;
+  app.favoriteSyncing.add(syncKey);
   const previousFavText = els.favButton.textContent;
   const previousSpotifyText = els.spotifyButton.textContent;
   els.favButton.textContent = "…";
-  els.spotifyButton.textContent = "SAVING";
+  els.spotifyButton.textContent = favorite ? "SAVING" : "REMOVING";
   try {
-    const spotifyTrack = await app.spotify.saveTrackToLibrary(track);
+    const spotifyTrack = favorite
+      ? await app.spotify.saveTrackToLibrary(track)
+      : await app.spotify.removeTrackFromLibrary(track);
     app.spotifyTrack = spotifyTrack;
-    els.favButton.textContent = "♥";
-    els.spotifyButton.textContent = "SAVED";
-    setServerState("SAVED");
+    app.favoriteStatusCache.set(track.id, {
+      saved: favorite,
+      checkedAt: Date.now()
+    });
+    setLocalFavorite(track.id, favorite);
+    els.spotifyButton.textContent = favorite ? "SAVED" : "REMOVED";
+    setServerState(favorite ? "SAVED" : "REMOVED");
     window.setTimeout(() => {
-      if (els.spotifyButton.textContent === "SAVED") updateSpotifyButton();
+      if (["SAVED", "REMOVED"].includes(els.spotifyButton.textContent)) updateSpotifyButton();
       setServerState("READY");
     }, 1200);
     return true;
   } catch (error) {
     console.warn(error);
     els.favButton.textContent = previousFavText;
-    if (/permission|auth|token|401|403/i.test(error.message)) {
+    if (isSpotifyLibraryPermissionError(error)) {
+      app.spotifyLibrarySyncDisabled = true;
+      els.spotifyButton.textContent = previousSpotifyText;
+      updateSpotifyButton();
+      setServerState("FAV OFF");
+    } else if (isSpotifyTokenError(error)) {
       app.spotify.clearToken();
       app.spotify.resetPlayer();
       els.spotifyButton.textContent = "LOGIN";
@@ -493,6 +568,61 @@ async function syncFavoriteToSpotify(track) {
       }, 1600);
     }
     return false;
+  } finally {
+    app.favoriteSyncing.delete(syncKey);
+  }
+}
+
+async function syncFavoriteStatusFromSpotify(track, options = {}) {
+  if (app.spotifyLibrarySyncDisabled) return false;
+  if (!track || !app.spotify?.status().authenticated || !app.spotify.isTrackSaved) return false;
+  const trackId = track.id;
+  const cached = app.favoriteStatusCache.get(trackId);
+  if (!options.force && cached && Date.now() - cached.checkedAt < 15000) return cached.saved;
+
+  const syncKey = `read:${trackId}`;
+  if (app.favoriteSyncing.has(syncKey)) return false;
+  app.favoriteSyncing.add(syncKey);
+  try {
+    const saved = await app.spotify.isTrackSaved(track);
+    app.favoriteStatusCache.set(trackId, {
+      saved,
+      checkedAt: Date.now()
+    });
+    if (app.payload?.current?.id !== trackId) return saved;
+    if (app.favorites.has(trackId) !== saved) {
+      setLocalFavorite(trackId, saved);
+      const payload = await api("/api/favorite", {
+        method: "POST",
+        body: JSON.stringify({
+          trackId,
+          favorite: saved,
+          source: "spotify-status",
+          silent: true
+        })
+      });
+      if (payload?.state) {
+        app.payload = payload;
+        syncFavoritesFromServer(payload);
+        updateCurrentFavoriteButton();
+      }
+    }
+    return saved;
+  } catch (error) {
+    console.warn(error);
+    if (isSpotifyLibraryPermissionError(error)) {
+      app.spotifyLibrarySyncDisabled = true;
+      updateSpotifyButton();
+      setServerState("FAV OFF");
+    } else if (isSpotifyTokenError(error)) {
+      app.spotify?.clearToken();
+      app.spotify?.resetPlayer();
+      updateSpotifyButton();
+      setServerState("LOGIN");
+    }
+    return false;
+  } finally {
+    app.favoriteSyncing.delete(syncKey);
   }
 }
 
@@ -516,9 +646,19 @@ function heroFromContext(context) {
   return `${day} ${part} ${mood}`;
 }
 
+function weatherReadout(context) {
+  const detail = context?.weatherDetail;
+  if (!detail) return context?.weather || "open";
+  const tempUnit = detail.units === "imperial" ? "°F" : detail.units === "standard" ? "K" : "°C";
+  const temp = Number.isFinite(Number(detail.temp)) ? ` · ${Math.round(Number(detail.temp))}${tempUnit}` : "";
+  const source = context.weatherSource === "openweather" ? "OpenWeather" : context.weatherSource || "";
+  return [context.weather, detail.description, source].filter(Boolean).join(" · ") + temp;
+}
+
 function render(payload) {
   app.payload = payload;
   const { current, context, profile, queue, transcript, state, aiDj } = payload;
+  syncFavoritesFromServer(payload);
   els.heroLine.textContent = heroFromContext(context);
   const hasCurrent = Boolean(current);
   els.playButton.disabled = !hasCurrent;
@@ -543,13 +683,13 @@ function render(payload) {
           <strong>${escapeHtml(djSource)}</strong>
         </div>
         <div class="dj-output-copy">
-          <p>老朋友，我在重新整理下一批歌。优先避开最近听过的曲目，继续往前推。</p>
+          <p>我在重新整理下一批歌。优先避开最近听过的曲目，继续往前推。</p>
         </div>
       </div>
     `;
     renderDjChat(state.djChat || []);
     els.contextReadout.innerHTML = `
-      <div>weather: <strong>${context.weather}</strong></div>
+      <div>weather: <strong>${escapeHtml(weatherReadout(context))}</strong></div>
       <div>mood: <strong>${context.mood}</strong> / intensity <strong>${context.intensity}</strong></div>
       <div>schedule: <strong>${context.scheduleTags.join(", ")}</strong></div>
     `;
@@ -593,7 +733,7 @@ function render(payload) {
   renderDjChat(state.djChat || []);
 
   els.contextReadout.innerHTML = `
-    <div>weather: <strong>${context.weather}</strong></div>
+    <div>weather: <strong>${escapeHtml(weatherReadout(context))}</strong></div>
     <div>mood: <strong>${context.mood}</strong> / intensity <strong>${context.intensity}</strong></div>
     <div>schedule: <strong>${context.scheduleTags.join(", ")}</strong></div>
   `;
@@ -968,9 +1108,17 @@ async function sendDjChat(event) {
       method: "POST",
       body: JSON.stringify({ text })
     });
-    if (app.payload?.state) app.payload.state.djChat = response.messages || [];
-    renderDjChat(response.messages || []);
+    if (response.payload) {
+      app.payload = response.payload;
+      render(response.payload);
+    } else if (app.payload?.state) {
+      app.payload.state.djChat = response.messages || [];
+      renderDjChat(response.messages || []);
+    } else {
+      renderDjChat(response.messages || []);
+    }
     setServerState("READY");
+    speakDjChatReply(response.reply).catch(console.warn);
   } catch (error) {
     console.warn(error);
     renderDjChat([
@@ -1160,6 +1308,7 @@ async function playCurrentOnSpotify(track, options = {}) {
   if (!track || !app.spotify?.status().authenticated) return null;
   const playSeq = ++app.spotifyPlaySeq;
   const targetId = track.id;
+  resetSpotifyPlaybackTracking();
   const resumeSeconds = options.positionSeconds ?? (
     app.payload?.current?.id === targetId
       ? playbackSeconds()
@@ -1179,6 +1328,7 @@ async function playCurrentOnSpotify(track, options = {}) {
 
   app.spotifyTrack = spotifyTrack;
   app.expectedSpotifyUri = spotifyTrack?.uri || "";
+  app.spotifyAutoAdvanceUri = "";
   loadAudioFeaturesForSpotifyTrack(track, spotifyTrack).catch(console.warn);
   if (spotifyTrack?.duration_ms) {
     app.payload.current.duration = Math.round(spotifyTrack.duration_ms / 1000);
@@ -1190,6 +1340,7 @@ async function playCurrentOnSpotify(track, options = {}) {
   els.spotifyButton.textContent = "SPOTIFY";
   els.spotifyButton.classList.add("connected");
   setServerState("READY");
+  syncFavoriteStatusFromSpotify(track, { force: true }).catch(console.warn);
   return spotifyTrack;
 }
 
@@ -1227,6 +1378,7 @@ async function togglePlay() {
       console.warn(error);
       app.playbackMode = "idle";
       app.expectedSpotifyUri = "";
+      resetSpotifyPlaybackTracking();
       app.spotify?.pause().catch(console.warn);
       if (/token|auth/i.test(error.message)) app.spotify?.clearToken();
       els.spotifyButton.textContent = app.spotify?.status().authenticated ? "CONNECT" : "LOGIN";
@@ -1238,6 +1390,7 @@ async function togglePlay() {
   } else if (!next && app.playbackMode === "spotify") {
     app.spotifyPlaySeq += 1;
     app.expectedSpotifyUri = "";
+    resetSpotifyPlaybackTracking();
     app.spotify.pause().catch(console.warn);
     app.playbackMode = "idle";
     stopSimAudio();
@@ -1259,6 +1412,7 @@ async function refresh() {
   app.currentAudioFeatures = null;
   app.spotifyPlaySeq += 1;
   app.expectedSpotifyUri = "";
+  resetSpotifyPlaybackTracking();
   app.playbackMode = "idle";
   app.elapsedBeforePlay = 0;
   app.startedAt = Date.now();
@@ -1286,6 +1440,7 @@ function applyTrackChange(payload, options = {}) {
   if (options.honorServerPlayState && !payload.state?.playing) {
     app.spotifyPlaySeq += 1;
     app.expectedSpotifyUri = "";
+    resetSpotifyPlaybackTracking();
     app.spotify?.pause().catch(console.warn);
     stopSimAudio();
     stopDjVoice();
@@ -1301,6 +1456,7 @@ function applyTrackChange(payload, options = {}) {
     playCurrentOnSpotify(payload.current).catch((error) => {
       console.warn(error);
       app.expectedSpotifyUri = "";
+      resetSpotifyPlaybackTracking();
       app.spotify?.pause().catch(console.warn);
       setPlaying(false);
       app.playbackMode = "idle";
@@ -1328,6 +1484,7 @@ async function applyRemotePlayState(playing) {
 
   app.spotifyPlaySeq += 1;
   app.expectedSpotifyUri = "";
+  resetSpotifyPlaybackTracking();
   if (app.playbackMode === "spotify") app.spotify?.pause().catch(console.warn);
   stopSimAudio();
   stopDjVoice();
@@ -1341,13 +1498,20 @@ async function syncExternalState() {
   const payload = await api("/api/snapshot").catch(() => api("/api/now"));
   const currentChanged = payload.current?.id !== app.payload.current?.id;
   const indexChanged = payload.state?.currentIndex !== app.payload.state?.currentIndex;
-  const queueChanged = payload.state?.queueSignature !== app.payload.state?.queueSignature;
+  const queueOrderChanged = (payload.state?.queueOrder || []).join("|") !== (app.payload.state?.queueOrder || []).join("|");
+  const queueChanged = payload.state?.queueSignature !== app.payload.state?.queueSignature || queueOrderChanged;
+  const favoriteIdsChanged = (payload.state?.favoriteIds || []).join("|") !== (app.payload.state?.favoriteIds || []).join("|");
+  const favoriteRequestChanged = favoriteRequestKey(payload.state?.favoriteRequest) !== favoriteRequestKey(app.payload.state?.favoriteRequest);
+  const favoriteChanged = favoriteIdsChanged || favoriteRequestChanged;
   const serverPlaying = Boolean(payload.state?.playing);
   const playStateChanged = serverPlaying !== app.playing;
-  if (!currentChanged && !indexChanged && !queueChanged && !playStateChanged) return;
+  if (!currentChanged && !indexChanged && !queueChanged && !playStateChanged && !favoriteChanged) return;
   if (!currentChanged && !indexChanged && !queueChanged) {
-    await applyRemotePlayState(serverPlaying);
-    if (app.payload?.state) app.payload.state.playing = serverPlaying;
+    if (favoriteChanged) render(payload);
+    if (playStateChanged) {
+      await applyRemotePlayState(serverPlaying);
+      if (app.payload?.state) app.payload.state.playing = serverPlaying;
+    }
     return;
   }
   applyTrackChange(payload, { honorServerPlayState: true, deferVoice: true });
@@ -1570,6 +1734,52 @@ function drawSpectrum() {
   requestAnimationFrame(drawSpectrum);
 }
 
+function spotifyDurationSeconds(spotifyState) {
+  const fromSpotify = Number(spotifyState?.duration) / 1000;
+  if (Number.isFinite(fromSpotify) && fromSpotify > 0) return fromSpotify;
+  return Number(app.payload?.current?.duration || 0);
+}
+
+function requestSpotifyAutoAdvance(actualUri, reason) {
+  if (!actualUri || app.spotifyAutoAdvanceUri === actualUri || app.advancing) return false;
+  app.spotifyAutoAdvanceUri = actualUri;
+  setServerState(reason === "loop" ? "NEXT" : "ENDED");
+  nextTrack().catch((error) => {
+    console.warn(error);
+    app.spotifyAutoAdvanceUri = "";
+    setServerState("RETRY");
+  });
+  return true;
+}
+
+function maybeAutoAdvanceSpotify(spotifyState, actualUri, positionSeconds, durationSeconds) {
+  if (
+    app.playbackMode !== "spotify"
+    || !app.playing
+    || !app.expectedSpotifyUri
+    || actualUri !== app.expectedSpotifyUri
+    || durationSeconds <= 0
+  ) {
+    return false;
+  }
+
+  const previous = app.spotifyState || {};
+  const previousPosition = Number(previous.positionSeconds || 0);
+  const previousUri = previous.uri || "";
+  const endWindow = Math.max(2.5, Math.min(6, durationSeconds * 0.015));
+  const nearEnd = positionSeconds >= durationSeconds - 1.4;
+  const wasNearEnd = previousUri === actualUri && previousPosition >= durationSeconds - endWindow;
+  const localWasNearEnd = playbackSeconds() >= durationSeconds - endWindow;
+  const returnedToStart = positionSeconds <= 2.5 && (wasNearEnd || localWasNearEnd);
+  const loopedToStart = returnedToStart && !spotifyState.paused;
+  const pausedAfterEnd = spotifyState.paused && (nearEnd || returnedToStart);
+
+  if (loopedToStart || pausedAfterEnd) {
+    return requestSpotifyAutoAdvance(actualUri, loopedToStart ? "loop" : "ended");
+  }
+  return false;
+}
+
 function syncSpotifyPlaybackState(spotifyState, actualUri) {
   if (
     app.playbackMode !== "spotify"
@@ -1582,13 +1792,18 @@ function syncSpotifyPlaybackState(spotifyState, actualUri) {
 
   const positionSeconds = Number(spotifyState.position) / 1000;
   if (!Number.isFinite(positionSeconds)) return;
+  const durationSeconds = spotifyDurationSeconds(spotifyState);
+  const autoAdvancing = maybeAutoAdvanceSpotify(spotifyState, actualUri, positionSeconds, durationSeconds);
   app.spotifyState = {
+    uri: actualUri,
     positionSeconds,
+    durationSeconds,
     updatedAt: Date.now(),
     paused: Boolean(spotifyState.paused)
   };
   app.elapsedBeforePlay = positionSeconds;
   app.startedAt = Date.now();
+  return autoAdvancing;
 }
 
 function applySpotifyPlayerState(spotifyState) {
@@ -1600,9 +1815,11 @@ function applySpotifyPlayerState(spotifyState) {
   app.expectedSpotifyUri = actualUri || app.expectedSpotifyUri;
   app.spotifyTrack = spotifyTrack;
   loadAudioFeaturesForSpotifyTrack(app.payload?.current, spotifyTrack).catch(console.warn);
+  syncFavoriteStatusFromSpotify(app.payload?.current).catch(console.warn);
+  const autoAdvancing = syncSpotifyPlaybackState(spotifyState, actualUri || app.expectedSpotifyUri);
+  if (autoAdvancing) return true;
   app.playing = !spotifyState.paused;
   els.playButton.textContent = app.playing ? "Ⅱ" : "▶";
-  syncSpotifyPlaybackState(spotifyState, actualUri || app.expectedSpotifyUri);
   renderProgress();
   updateSpotifyButton();
   return true;
@@ -1659,13 +1876,17 @@ async function initSpotify() {
   app.spotify = new SpotifyBridge();
   await app.spotify.init(config).catch((error) => {
     console.warn(error);
+    setServerState(/spotify/i.test(error.message || "") ? "LOGIN ERR" : "READY");
     return app.spotify.status();
   });
   updateSpotifyButton();
+  app.spotifyLibrarySyncDisabled = false;
+  const shouldAutoConnect = app.spotify?.justAuthenticated;
   app.spotify.addEventListener("ready", () => {
     app.playbackMode = app.playbackMode === "spotify" ? "spotify" : app.playbackMode;
     updateSpotifyButton();
     syncSpotifyProgressFromPlayer().catch(console.warn);
+    syncFavoriteStatusFromSpotify(app.payload?.current, { force: true }).catch(console.warn);
     api("/api/play-state", {
       method: "POST",
       body: JSON.stringify({ playing: app.playing, spotifyDeviceId: app.spotify.deviceId })
@@ -1696,6 +1917,10 @@ async function initSpotify() {
     }
     console.warn(event.detail.message);
   });
+  if (shouldAutoConnect) {
+    setServerState("LOGIN OK");
+    connectSpotify().catch(console.warn);
+  }
 }
 
 async function connectSpotify() {
@@ -1738,7 +1963,7 @@ function updateSpotifyButton() {
     els.spotifyButton.classList.remove("connected");
     return;
   }
-  els.spotifyButton.textContent = "LOGIN";
+  els.spotifyButton.textContent = status.needsLogin ? "RE-LOGIN" : "LOGIN";
   els.spotifyButton.classList.remove("connected");
 }
 
@@ -1747,6 +1972,7 @@ function syncForegroundPlayback() {
     .catch(console.warn)
     .finally(() => {
       syncSpotifyProgressFromPlayer().catch(console.warn);
+      syncFavoriteStatusFromSpotify(app.payload?.current).catch(console.warn);
       window.setTimeout(() => syncSpotifyProgressFromPlayer().catch(console.warn), 550);
     });
 }
@@ -1787,21 +2013,23 @@ function bindEvents() {
     jumpToQueueTrack(Number(item.dataset.queueIndex));
   });
   els.favButton.addEventListener("click", async () => {
-    const id = app.payload?.current?.id;
+    const track = app.payload?.current;
+    const id = track?.id;
     if (!id) return;
-    const isFavorite = app.favorites.has(id);
-    if (isFavorite) {
-      app.favorites.delete(id);
-    } else {
-      app.favorites.add(id);
+    const nextFavorite = !app.favorites.has(id);
+    setLocalFavorite(id, nextFavorite);
+    try {
+      const payload = await api("/api/favorite", {
+        method: "POST",
+        body: JSON.stringify({ trackId: id, favorite: nextFavorite, source: "pwa", silent: true })
+      });
+      render(payload);
+    } catch (error) {
+      console.warn(error);
+      setLocalFavorite(id, !nextFavorite);
+      return;
     }
-    saveFavorites();
-    els.favButton.textContent = app.favorites.has(id) ? "♥" : "♡";
-    api("/api/favorite", {
-      method: "POST",
-      body: JSON.stringify({ trackId: id, favorite: !isFavorite, source: "pwa" })
-    }).catch(console.warn);
-    if (!isFavorite) await syncFavoriteToSpotify(app.payload.current);
+    await syncFavoriteToSpotify(track, nextFavorite);
   });
   els.voiceButton?.addEventListener("click", () => {
     setVoiceEnabled(!app.voiceEnabled);
@@ -1839,6 +2067,7 @@ function bindEvents() {
     }
     const status = app.spotify.status();
     if (!status.authenticated) {
+      if (status.needsLogin) app.spotify.clearToken();
       await app.spotify.login();
       return;
     }
@@ -1856,7 +2085,6 @@ function bindEvents() {
     const clientId = els.spotifyClientIdInput.value.trim();
     if (clientId && clientId !== localStorage.getItem(SPOTIFY_CLIENT_ID_KEY)) {
       localStorage.setItem(SPOTIFY_CLIENT_ID_KEY, clientId);
-      localStorage.removeItem(SPOTIFY_TOKEN_KEY);
       app.spotifyConfig = {
         ...app.spotifyConfig,
         spotifyClientId: clientId
@@ -1864,7 +2092,10 @@ function bindEvents() {
       app.spotify = new SpotifyBridge();
       await app.spotify.init(app.spotifyConfig);
     }
-    if (app.spotify?.configured()) await app.spotify.login();
+    if (app.spotify?.configured()) {
+      app.spotify.clearToken();
+      await app.spotify.login();
+    }
   });
   els.spotifySetup?.addEventListener("click", (event) => {
     if (event.target === els.spotifySetup) closeSpotifySetup();
@@ -1892,11 +2123,13 @@ async function main() {
   setInterval(renderProgress, 250);
   setInterval(renderRestCue, 30000);
   setInterval(() => syncExternalState().catch(console.warn), 2000);
+  setInterval(() => syncFavoriteStatusFromSpotify(app.payload?.current).catch(console.warn), 15000);
   bindEvents();
   await initSpotify();
   await refresh();
   scheduleSpotifyPrefetch();
   await syncSpotifyProgressFromPlayer().catch(console.warn);
+  await syncFavoriteStatusFromSpotify(app.payload?.current, { force: true }).catch(console.warn);
   drawSpectrum();
   setServerState("READY");
 }
