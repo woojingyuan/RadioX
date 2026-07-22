@@ -9,3 +9,4 @@ output.mp3
 npm-debug.log*
 *.log
 data/state.json
+data/certs/

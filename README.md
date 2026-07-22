@@ -10,6 +10,23 @@ npm run dev
 
 Open `http://127.0.0.1:8765`.
 
+## Phone HTTPS and PWA
+
+Create a private RadioX certificate for the Mac's current Wi-Fi address, then restart RadioX:
+
+```bash
+npm run cert:setup
+npm run dev
+```
+
+The startup output prints three phone URLs. On the phone, while connected to the same Wi-Fi:
+
+1. Open the `RadioX phone CA` HTTP URL and install the downloaded `radiox-ca.cer` profile.
+2. On iPhone, open Settings > General > About > Certificate Trust Settings and enable full trust for `RadioX Local CA`.
+3. Open the `RadioX secure phone` HTTPS URL. This secure origin enables the service worker, installable PWA, Web Crypto PKCE, and mobile Spotify login.
+
+The CA private key remains in the Git-ignored `data/certs/` directory. If the Mac's Wi-Fi IP changes, run `npm run cert:setup` again and restart the server. Android trust-menu wording varies by manufacturer.
+
 ## Floating Toolbar
 
 RadioX includes a tiny macOS companion toolbar that stays available even when the browser is minimized. By default it is visually hidden at the top center of the screen. Move the mouse into that invisible top-center hot zone to drop down minimal info, single-click for detailed station context and playback controls, and double-click to open the full RadioX web UI.
@@ -31,6 +48,8 @@ npm run dev
 ```
 
 Spotify playback requires a Spotify Premium account and the Web Playback SDK. The app uses Authorization Code with PKCE in the browser, so no client secret is stored locally.
+
+For phone login, also add the exact `RadioX secure phone` callback printed at startup, for example `https://192.168.3.169:8766/callback`, to the Spotify app's Redirect URIs. RadioX automatically chooses the HTTPS callback when opened from that address. Spotify requires an exact HTTPS redirect for non-loopback addresses.
 
 In the app:
 

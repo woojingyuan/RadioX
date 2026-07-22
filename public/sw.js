@@ -1,4 +1,4 @@
-const CACHE_NAME = "radiox-20260510-ring4";
+const CACHE_NAME = "radiox-20260723-metal1";
 const ASSETS = [
   "/",
   "/index.html",
@@ -8,8 +8,13 @@ const ASSETS = [
   "/spotify.js",
   "/world-bands.js",
   "/world-tours.js",
+  "/world-3d.mjs",
+  "/vendor/three.module.js",
+  "/vendor/three.core.js",
   "/manifest.webmanifest",
-  "/icons/icon.svg"
+  "/icons/icon.svg",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png"
 ];
 
 self.addEventListener("install", (event) => {

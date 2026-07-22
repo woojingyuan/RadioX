@@ -1,0 +1,51 @@
+#!/bin/zsh
+set -euo pipefail
+
+ROOT="${0:A:h:h}"
+CERT_DIR="${RADIOX_CERT_DIR:-$ROOT/data/certs}"
+LAN_IP="${1:-}"
+
+if [[ -z "$LAN_IP" ]]; then
+  INTERFACE="$(route -n get default 2>/dev/null | awk '/interface:/{print $2; exit}' || true)"
+  LAN_IP="$(ipconfig getifaddr "$INTERFACE" 2>/dev/null || true)"
+fi
+
+if [[ -z "$LAN_IP" ]]; then
+  print -u2 "Could not detect a LAN IPv4 address. Pass it explicitly: npm run cert:setup -- 192.168.x.x"
+  exit 1
+fi
+
+mkdir -p "$CERT_DIR"
+
+if [[ ! -f "$CERT_DIR/ca-key.pem" || ! -f "$CERT_DIR/ca-cert.pem" ]]; then
+  openssl req -x509 -newkey rsa:2048 -nodes \
+    -keyout "$CERT_DIR/ca-key.pem" \
+    -out "$CERT_DIR/ca-cert.pem" \
+    -days 3650 -sha256 \
+    -subj "/CN=RadioX Local CA" \
+    -addext "basicConstraints=critical,CA:TRUE" \
+    -addext "keyUsage=critical,keyCertSign,cRLSign"
+fi
+
+openssl req -new -newkey rsa:2048 -nodes \
+  -keyout "$CERT_DIR/server-key.pem" \
+  -out "$CERT_DIR/server.csr" \
+  -subj "/CN=$LAN_IP" \
+  -addext "subjectAltName=IP:$LAN_IP,IP:127.0.0.1,DNS:localhost" \
+  -addext "extendedKeyUsage=serverAuth"
+
+openssl x509 -req \
+  -in "$CERT_DIR/server.csr" \
+  -CA "$CERT_DIR/ca-cert.pem" \
+  -CAkey "$CERT_DIR/ca-key.pem" \
+  -CAcreateserial \
+  -out "$CERT_DIR/server-cert.pem" \
+  -days 825 -sha256 -copy_extensions copy
+
+openssl x509 -in "$CERT_DIR/ca-cert.pem" -outform der -out "$CERT_DIR/radiox-ca.cer"
+chmod 600 "$CERT_DIR/ca-key.pem" "$CERT_DIR/server-key.pem"
+
+print "RadioX HTTPS certificate created for $LAN_IP"
+print "Phone CA: http://$LAN_IP:${PORT:-8765}/radiox-ca.cer"
+print "Secure app: https://$LAN_IP:${HTTPS_PORT:-8766}/"
+print "Spotify callback: https://$LAN_IP:${HTTPS_PORT:-8766}/callback"

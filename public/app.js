@@ -1,10 +1,13 @@
 const els = {
+  station: document.querySelector(".station"),
   time: document.querySelector("#time"),
   date: document.querySelector("#date"),
   heroLine: document.querySelector("#heroLine"),
   trackTitle: document.querySelector("#trackTitle"),
   trackArtist: document.querySelector("#trackArtist"),
   albumArt: document.querySelector("#albumArt"),
+  playerAmbient: document.querySelector("#playerAmbient"),
+  trackReason: document.querySelector("#trackReason"),
   playButton: document.querySelector("#playButton"),
   prevButton: document.querySelector("#prevButton"),
   nextButton: document.querySelector("#nextButton"),
@@ -43,13 +46,20 @@ const els = {
   systemStatus: document.querySelector("#systemStatus"),
   worldPanel: document.querySelector("#worldPanel"),
   worldGlobe: document.querySelector("#worldGlobe"),
+  worldCountryFocus: document.querySelector("#worldCountryFocus"),
+  worldCountryName: document.querySelector("#worldCountryName"),
+  worldCountryMatches: document.querySelector("#worldCountryMatches"),
+  worldCountryClear: document.querySelector("#worldCountryClear"),
   worldCanvas: document.querySelector("#worldCanvas"),
+  world3dCanvas: document.querySelector("#world3dCanvas"),
   worldTourLayer: document.querySelector("#worldTourLayer"),
   worldTourTooltip: document.querySelector("#worldTourTooltip"),
   worldMarkers: document.querySelector("#worldMarkers"),
+  worldAlbumOrbit: document.querySelector("#worldAlbumOrbit"),
   worldRankStrip: document.querySelector("#worldRankStrip"),
   bandDetail: document.querySelector("#bandDetail"),
   worldTabs: document.querySelector(".world-tabs"),
+  worldEra: document.querySelector("#worldEra"),
   worldFullscreenButton: document.querySelector("#worldFullscreenButton"),
   spectrum: document.querySelector("#spectrum")
 };
@@ -78,18 +88,28 @@ const app = {
   spotifyAutoAdvanceUri: "",
   albumArtLookupKey: "",
   albumArtLookupSeq: 0,
+  albumPaletteKey: "",
+  lastRenderedTrackId: "",
+  queueDragTrackId: "",
+  queuePointerDrag: null,
   worldBandId: "",
   worldHoverBandId: "",
   worldAlbumKey: "",
   worldFilter: "million",
+  worldEra: "all",
+  worldCountryName: "",
+  worldCountryLocked: false,
   worldCenterLon: 20,
   worldCenterLat: 12,
   worldZoom: 1,
   worldAutoRotate: true,
+  worldHoverPausedRotation: false,
   worldVelocityLon: 0.018,
   worldVelocityLat: 0,
   worldDragging: false,
   worldDragStart: null,
+  worldFocusAnimation: null,
+  world3D: null,
   worldLastFrameAt: 0,
   worldLastDrawAt: 0,
   worldFullscreen: false,
@@ -98,6 +118,7 @@ const app = {
   worldAtlasSource: "fallback",
   worldAlbumCovers: new Map(),
   worldAlbumLookup: new Set(),
+  worldTasteFieldCache: null,
   worldQueueingKey: "",
   worldCatalog: null,
   worldCatalogLoadedAt: 0,
@@ -347,10 +368,80 @@ function albumArtKey(track) {
   return String(track.id || `${track.title || ""}|${track.artist || ""}`);
 }
 
+function fallbackTrackPalette(track) {
+  const seed = parseInt(stableVoiceHash(`${track?.id || "radiox"}:${track?.artist || ""}`), 36) || 142;
+  const hues = [158, 184, 338, 42, 208, 12];
+  const hue = hues[seed % hues.length];
+  const secondHue = (hue + 42 + seed % 76) % 360;
+  return {
+    primary: `hsl(${hue} 78% 58%)`,
+    secondary: `hsl(${secondHue} 72% 64%)`,
+    rgb: hue === 158 ? "57,245,176" : hue === 42 ? "247,201,92" : "151,231,255"
+  };
+}
+
+function applyTrackPalette(track, palette, coverUrl = "") {
+  if (!els.station) return;
+  const colors = palette || fallbackTrackPalette(track);
+  els.station.style.setProperty("--track-accent", colors.primary);
+  els.station.style.setProperty("--track-secondary", colors.secondary);
+  els.station.style.setProperty("--track-rgb", colors.rgb);
+  if (els.playerAmbient) {
+    els.playerAmbient.style.backgroundImage = coverUrl ? `url("${coverUrl.replace(/["\\]/g, "")}")` : "";
+    els.playerAmbient.classList.toggle("has-cover", Boolean(coverUrl));
+  }
+}
+
+function imagePalette(image, track) {
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = 32;
+    canvas.height = 32;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    context.drawImage(image, 0, 0, 32, 32);
+    const pixels = context.getImageData(0, 0, 32, 32).data;
+    const buckets = new Map();
+    for (let index = 0; index < pixels.length; index += 16) {
+      const alpha = pixels[index + 3];
+      if (alpha < 180) continue;
+      const r = pixels[index];
+      const g = pixels[index + 1];
+      const b = pixels[index + 2];
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      if (max < 45 || min > 225 || max - min < 24) continue;
+      const key = `${Math.round(r / 32) * 32},${Math.round(g / 32) * 32},${Math.round(b / 32) * 32}`;
+      buckets.set(key, (buckets.get(key) || 0) + 1 + (max - min) / 80);
+    }
+    const ranked = [...buckets]
+      .map(([key, score]) => ({ rgb: key.split(",").map(Number), score }))
+      .sort((a, b) => b.score - a.score);
+    if (!ranked.length) return fallbackTrackPalette(track);
+    const primary = ranked[0].rgb;
+    const secondary = ranked.find((entry) => Math.hypot(
+      entry.rgb[0] - primary[0],
+      entry.rgb[1] - primary[1],
+      entry.rgb[2] - primary[2]
+    ) > 95)?.rgb || fallbackTrackPalette(track).secondary;
+    return {
+      primary: `rgb(${primary.join(",")})`,
+      secondary: Array.isArray(secondary) ? `rgb(${secondary.join(",")})` : secondary,
+      rgb: primary.join(",")
+    };
+  } catch (error) {
+    return fallbackTrackPalette(track);
+  }
+}
+
 function renderAlbumArt(track, spotifyTrack = app.spotifyTrack) {
   if (!els.albumArt) return;
   const coverUrl = spotifyTrackMatchesCurrent(spotifyTrack, track) ? spotifyAlbumCoverUrl(spotifyTrack) : "";
   els.albumArt.classList.toggle("has-cover", Boolean(coverUrl));
+  const paletteKey = `${albumArtKey(track)}:${coverUrl}`;
+  if (app.albumPaletteKey !== paletteKey) {
+    app.albumPaletteKey = paletteKey;
+    applyTrackPalette(track, fallbackTrackPalette(track), coverUrl);
+  }
 
   if (coverUrl) {
     const existing = els.albumArt.querySelector("img");
@@ -359,10 +450,14 @@ function renderAlbumArt(track, spotifyTrack = app.spotifyTrack) {
       return;
     }
     const image = document.createElement("img");
+    image.crossOrigin = "anonymous";
     image.src = coverUrl;
     image.alt = `${track?.title || "Current track"} album cover`;
     image.decoding = "async";
     image.loading = "lazy";
+    image.addEventListener("load", () => {
+      if (app.albumPaletteKey === paletteKey) applyTrackPalette(track, imagePalette(image, track), coverUrl);
+    }, { once: true });
     els.albumArt.replaceChildren(image);
     return;
   }
@@ -424,6 +519,10 @@ function restoreVoiceDucking() {
   restore?.();
 }
 
+function setDjSpeaking(active) {
+  els.djChatLog?.classList.toggle("speaking", Boolean(active));
+}
+
 function stopDjVoice() {
   app.voiceRunId += 1;
   app.djAudio?.pause();
@@ -434,6 +533,7 @@ function stopDjVoice() {
   }
   if (speechSupported()) window.speechSynthesis.cancel();
   restoreVoiceDucking();
+  setDjSpeaking(false);
   if (["TALKING", "VOICE", "OPENAI VOICE", "INWORLD VOICE", "DJ VOICE", "BROWSER VOICE"].includes(els.serverState?.textContent)) setServerState("READY");
 }
 
@@ -484,8 +584,12 @@ async function playCloudTextVoice(text, key, runId) {
     app.djAudioUrl = URL.createObjectURL(blob);
     app.djAudio = new Audio(app.djAudioUrl);
     app.voiceRestore = duckPlaybackForVoice();
-    app.djAudio.onplay = () => setServerState(voiceLabel);
+    app.djAudio.onplay = () => {
+      setDjSpeaking(true);
+      setServerState(voiceLabel);
+    };
     app.djAudio.onended = () => {
+      setDjSpeaking(false);
       restoreVoiceDucking();
       if (app.djAudioUrl) URL.revokeObjectURL(app.djAudioUrl);
       app.djAudioUrl = "";
@@ -493,6 +597,7 @@ async function playCloudTextVoice(text, key, runId) {
       if (els.serverState?.textContent === voiceLabel) setServerState("READY");
     };
     app.djAudio.onerror = () => {
+      setDjSpeaking(false);
       restoreVoiceDucking();
       if (app.djAudioUrl) URL.revokeObjectURL(app.djAudioUrl);
       app.djAudioUrl = "";
@@ -514,6 +619,7 @@ function speakBrowserText(parts, runId) {
   const voice = preferredDjVoice();
   app.voiceRestore = duckPlaybackForVoice();
   const finish = () => {
+    setDjSpeaking(false);
     restoreVoiceDucking();
     if (["TALKING", "BROWSER VOICE"].includes(els.serverState?.textContent)) setServerState("READY");
   };
@@ -530,7 +636,10 @@ function speakBrowserText(parts, runId) {
     utterance.rate = index === 0 ? 0.86 : 0.9;
     utterance.pitch = index === 0 ? 0.82 : 0.86;
     utterance.volume = 1;
-    utterance.onstart = () => setServerState("BROWSER VOICE");
+    utterance.onstart = () => {
+      setDjSpeaking(true);
+      setServerState("BROWSER VOICE");
+    };
     utterance.onerror = finish;
     utterance.onend = () => {
       const pause = index === 0 ? 420 : 260;
@@ -698,6 +807,32 @@ function weatherReadout(context) {
   return [context.weather, detail.description, source].filter(Boolean).join(" · ") + temp;
 }
 
+function queueMatchPercent(track) {
+  const score = Number(track?.score || 0);
+  return Math.round(clampValue(58 + score / 8, 58, 99));
+}
+
+function renderQueue(queue, current = null) {
+  if (!els.queue || !els.queueCount) return;
+  els.queueCount.textContent = `${queue.length} TRACKS`;
+  els.queue.innerHTML = queue.map((track, index) => {
+    const active = track.id === current?.id;
+    const reason = track.reason || track.story?.headline || "RadioX crate note";
+    return `
+      <li class="${active ? "active" : ""}" draggable="true" data-queue-index="${index}" data-queue-track-id="${escapeAttr(track.id)}" aria-label="${escapeAttr(`${track.title} by ${track.artist}`)}">
+        <span class="queue-grip" aria-hidden="true">⋮⋮</span>
+        <div class="queue-copy">
+          <b>${escapeHtml(track.title)}</b>
+          <span>${escapeHtml(track.artist)}</span>
+          <small>${escapeHtml(reason)}</small>
+          <div class="queue-path"><i style="--match:${queueMatchPercent(track)}%"></i><em>${queueMatchPercent(track)}% MATCH</em></div>
+        </div>
+        <strong class="queue-index">${active ? "ON" : String(index + 1).padStart(2, "0")}</strong>
+      </li>
+    `;
+  }).join("");
+}
+
 function render(payload) {
   const safePayload = payload || {};
   const current = safePayload.current || null;
@@ -715,6 +850,12 @@ function render(payload) {
   const queue = Array.isArray(safePayload.queue) ? safePayload.queue : [];
   const state = { volume: Number(els.volume?.value || 70), djChat: [], ...(safePayload.state || {}) };
   app.payload = { ...safePayload, current, context, profile, queue, state };
+  if (current?.id && current.id !== app.lastRenderedTrackId) {
+    app.lastRenderedTrackId = current.id;
+    els.station?.classList.remove("track-changing");
+    window.requestAnimationFrame(() => els.station?.classList.add("track-changing"));
+    window.setTimeout(() => els.station?.classList.remove("track-changing"), 720);
+  }
   syncFavoritesFromServer(app.payload);
   els.heroLine.textContent = heroFromContext(context);
   const hasCurrent = Boolean(current);
@@ -740,17 +881,8 @@ function render(payload) {
       <div>mood: <strong>${context.mood}</strong> / intensity <strong>${context.intensity}</strong></div>
       <div>schedule: <strong>${context.scheduleTags.join(", ")}</strong></div>
     `;
-    els.queueCount.textContent = `${queue.length} TRACKS`;
-    els.queue.innerHTML = queue.map((track, index) => `
-      <li data-queue-index="${index}">
-        <div>
-          <b>${escapeHtml(track.title)}</b>
-          <span>${escapeHtml(track.artist)}</span>
-          <small>${escapeHtml(track.story?.headline || "RadioX crate note")}</small>
-        </div>
-        <em>${String(index + 1).padStart(2, "0")}</em>
-      </li>
-    `).join("");
+    if (els.trackReason) els.trackReason.textContent = "";
+    renderQueue(queue, null);
     renderTasteTags(profile);
     scheduleSpotifyPrefetch();
     handleRemoteFavoriteRequest(app.payload);
@@ -760,6 +892,7 @@ function render(payload) {
   els.trackTitle.textContent = current.title;
   const currentGenres = Array.isArray(current.genres) ? current.genres : [];
   els.trackArtist.textContent = `${current.artist} — ${currentGenres.join(" / ") || "RadioX"}`;
+  if (els.trackReason) els.trackReason.textContent = current.reason || current.story?.headline || "";
   loadAlbumArtForTrack(current);
   els.duration.textContent = formatTime(current.duration);
   els.playButton.textContent = app.playing ? "Ⅱ" : "▶";
@@ -774,17 +907,7 @@ function render(payload) {
     <div>schedule: <strong>${context.scheduleTags.join(", ")}</strong></div>
   `;
 
-  els.queueCount.textContent = `${queue.length} TRACKS`;
-  els.queue.innerHTML = queue.map((track, index) => `
-    <li class="${track.id === current.id ? "active" : ""}" data-queue-index="${index}">
-      <div>
-        <b>${escapeHtml(track.title)}</b>
-        <span>${escapeHtml(track.artist)}</span>
-        <small>${escapeHtml(track.story?.headline || "RadioX crate note")}</small>
-      </div>
-      <em>${String(index + 1).padStart(2, "0")}</em>
-    </li>
-  `).join("");
+  renderQueue(queue, current);
 
   renderTasteTags(profile);
   scheduleSpotifyPrefetch();
@@ -851,6 +974,12 @@ function worldStatusLabel() {
   return "album mode";
 }
 
+function mobileStatusLabel() {
+  if (app.spotifyConfig?.secureContext) return "HTTPS";
+  if (app.spotifyConfig?.httpsAvailable) return "LAN HTTP";
+  return "setup";
+}
+
 function renderSystemStatus() {
   if (!els.systemStatus) return;
   const provider = app.spotifyConfig?.ttsConfigured
@@ -864,6 +993,7 @@ function renderSystemStatus() {
       ${statusBadge("TTS", provider)}
       ${statusBadge("Weather", weatherStatusLabel())}
       ${statusBadge("World", worldStatusLabel())}
+      ${statusBadge("Mobile", mobileStatusLabel())}
       ${pending ? statusBadge("Review", `${pending} pending`, "warn") : ""}
     </div>
     ${issueEntries.length ? `
@@ -1244,6 +1374,15 @@ const WORLD_ATLAS_URLS = [
 
 const WORLD_FILTER_STORAGE_KEY = "radiox.worldFilter";
 const WORLD_FILTERS = new Set(["million", "grammy", "taste"]);
+const WORLD_ERA_STORAGE_KEY = "radiox.worldEra";
+const WORLD_ERAS = new Set(["all", "60s", "70s", "80s", "90s", "00s", "now"]);
+const WORLD_COUNTRY_TASTE_MIN = 55;
+const WORLD_COUNTRY_ALIASES = new Map([
+  ["united states of america", "United States"],
+  ["russian federation", "Russia"],
+  ["korea, republic of", "South Korea"],
+  ["republic of korea", "South Korea"]
+]);
 const WORLD_TOUR_FUTURE_DAYS = 730;
 const WORLD_GRAMMY_ALBUMS = new Map([
   ["the-beatles:Sgt. Pepper's Lonely Hearts Club Band", { year: 1968, award: "Album of the Year" }],
@@ -1368,13 +1507,72 @@ function bandBestTasteMatch(band) {
     .sort((a, b) => b.score - a.score)[0];
 }
 
+function bandCatalogTasteMatch(band) {
+  const albums = band?.albums || [];
+  if (!albums.length) return { score: 0, reason: "" };
+  return albums
+    .map((album) => albumTasteMatch(band, album))
+    .sort((a, b) => b.score - a.score)[0];
+}
+
+function worldTasteFieldSignature() {
+  const profile = tasteProfileForWorld();
+  return JSON.stringify({
+    anchors: profile.tasteAnchors || [],
+    lean: profile.currentLean || [],
+    weights: profile.genreWeights || {},
+    time: profile.timePreferences?.[app.payload?.context?.now?.dayPart || "day"]?.genres || []
+  });
+}
+
+function worldTasteField() {
+  const signature = worldTasteFieldSignature();
+  if (app.worldTasteFieldCache?.signature === signature) return app.worldTasteFieldCache.map;
+
+  const grouped = new Map();
+  worldBands().forEach((band) => {
+    const score = bandCatalogTasteMatch(band).score;
+    bandWorldCountries(band).forEach((country) => {
+      const key = canonicalWorldCountry(country).toLowerCase();
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(score);
+    });
+  });
+
+  const map = new Map([...grouped].map(([country, scores]) => {
+    const strongest = scores.sort((a, b) => b - a).slice(0, 3);
+    const score = Math.round(strongest.reduce((sum, value) => sum + value, 0) / strongest.length);
+    return [country, { score, count: scores.length }];
+  }));
+  app.worldTasteFieldCache = { signature, map };
+  return map;
+}
+
+function countryTasteMatch(countryName) {
+  return worldTasteField().get(canonicalWorldCountry(countryName).toLowerCase()) || null;
+}
+
+function tasteMatchTier(score) {
+  if (score >= 80) return "match-high";
+  if (score >= 65) return "match-discovery";
+  return "match-distant";
+}
+
+function countryTasteOverlay(score) {
+  if (score >= 80) return "rgba(57,245,176,0.28)";
+  if (score >= 65) return "rgba(247,201,92,0.22)";
+  return "rgba(151,231,255,0.1)";
+}
+
 function worldAlbumFilterLabel() {
+  if (app.worldCountryName) return "COUNTRY TASTE";
   if (app.worldFilter === "grammy") return "GRAMMY";
   if (app.worldFilter === "taste") return "TASTE";
   return "MILLION";
 }
 
 function worldAlbumNote(band, album) {
+  if (app.worldCountryName) return "Country Taste";
   const grammy = albumGrammyMeta(band, album);
   if (app.worldFilter === "grammy" && grammy) return `${grammy.year} Grammy · ${grammy.award}`;
   if (app.worldFilter === "taste") return "Taste Map";
@@ -1388,15 +1586,54 @@ function albumMatchesWorldFilter(band, album) {
   return Boolean(band.claimedSalesM || album.million);
 }
 
+function albumMatchesWorldEra(album) {
+  const era = WORLD_ERAS.has(app.worldEra) ? app.worldEra : "all";
+  if (era === "all") return true;
+  const year = Number(album?.year || albumGrammyMeta(null, album)?.year || 0);
+  if (!year) return false;
+  if (era === "now") return year >= 2010;
+  const start = era === "00s" ? 2000 : 1900 + Number.parseInt(era, 10);
+  return year >= start && year < start + 10;
+}
+
 function worldAlbumsForBand(band) {
-  return (band?.albums || [])
+  const entries = (band?.albums || [])
     .map((album, albumIndex) => ({ album, albumIndex, note: worldAlbumNote(band, album) }))
-    .filter((entry) => albumMatchesWorldFilter(band, entry.album));
+    .filter((entry) => albumMatchesWorldEra(entry.album));
+  return app.worldCountryName ? entries : entries.filter((entry) => albumMatchesWorldFilter(band, entry.album));
+}
+
+function canonicalWorldCountry(value) {
+  const name = String(value || "").trim();
+  return WORLD_COUNTRY_ALIASES.get(name.toLowerCase()) || name;
+}
+
+function bandWorldCountries(band) {
+  return String(band?.country || "")
+    .split("/")
+    .map(canonicalWorldCountry)
+    .filter(Boolean);
+}
+
+function bandMatchesWorldCountry(band, countryName = app.worldCountryName) {
+  const target = canonicalWorldCountry(countryName).toLowerCase();
+  return !target || bandWorldCountries(band).some((name) => name.toLowerCase() === target);
+}
+
+function worldLayerBands() {
+  return worldBands().filter((band) => worldAlbumsForBand(band).length);
 }
 
 function filteredWorldBands() {
-  const bands = worldBands();
-  return bands.filter((band) => worldAlbumsForBand(band).length);
+  const bands = worldLayerBands();
+  if (!app.worldCountryName) return bands;
+  return bands
+    .filter((band) => bandMatchesWorldCountry(band))
+    .map((band) => ({ band, match: bandBestTasteMatch(band).score }))
+    .filter((entry) => entry.match >= WORLD_COUNTRY_TASTE_MIN)
+    .sort((a, b) => b.match - a.match || a.band.name.localeCompare(b.band.name))
+    .slice(0, worldRingLabelLimit())
+    .map((entry) => entry.band);
 }
 
 function worldAlbumEntries() {
@@ -1652,6 +1889,48 @@ function topoCountries(topology) {
   })).filter((country) => country.rings.length);
 }
 
+function pointInWorldRing(lon, lat, ring) {
+  let inside = false;
+  const points = [];
+  (ring || []).forEach(([pointLon, pointLat]) => {
+    let unwrappedLon = Number(pointLon);
+    const previousLon = points.at(-1)?.[0];
+    if (Number.isFinite(previousLon)) {
+      while (unwrappedLon - previousLon > 180) unwrappedLon -= 360;
+      while (unwrappedLon - previousLon < -180) unwrappedLon += 360;
+    }
+    points.push([unwrappedLon, Number(pointLat)]);
+  });
+  if (!points.length) return false;
+  let testLon = Number(lon);
+  const referenceLon = points.reduce((sum, point) => sum + point[0], 0) / points.length;
+  while (testLon - referenceLon > 180) testLon -= 360;
+  while (testLon - referenceLon < -180) testLon += 360;
+  for (let index = 0, previous = points.length - 1; index < points.length; previous = index, index += 1) {
+    const [x1, y1] = points[index];
+    const [x2, y2] = points[previous];
+    const crosses = (y1 > lat) !== (y2 > lat)
+      && testLon < ((x2 - x1) * (lat - y1)) / (y2 - y1) + x1;
+    if (crosses) inside = !inside;
+  }
+  return inside;
+}
+
+function worldCountryAt(lon, lat) {
+  const atlasCountry = app.worldCountries.find((country) => (
+    country.rings.some((ring) => pointInWorldRing(lon, lat, ring))
+  ));
+  if (atlasCountry?.name) return canonicalWorldCountry(atlasCountry.name);
+
+  const nearest = WORLD_COUNTRY_LABELS
+    .map((country) => ({
+      ...country,
+      distance: Math.hypot(normalizeDegrees(country.lon - lon) * Math.cos(lat * Math.PI / 180), country.lat - lat)
+    }))
+    .sort((a, b) => a.distance - b.distance)[0];
+  return nearest?.distance <= 16 ? canonicalWorldCountry(nearest.name) : "";
+}
+
 async function loadWorldAtlas() {
   if (app.worldAtlasLoading || app.worldCountries.length) return;
   app.worldAtlasLoading = true;
@@ -1696,6 +1975,28 @@ function projectWorldPoint(lonDeg, latDeg, radius = 50, center = 50) {
   };
 }
 
+function worldPointFromClient(clientX, clientY) {
+  const rect = els.worldGlobe?.getBoundingClientRect();
+  if (!rect?.width || !rect?.height) return null;
+  const radius = Math.min(rect.width, rect.height) * WORLD_GLOBE_RADIUS_RATIO * app.worldZoom;
+  const x = (clientX - rect.left - rect.width / 2) / radius;
+  const y = (rect.top + rect.height / 2 - clientY) / radius;
+  const rho = Math.hypot(x, y);
+  if (rho > 1) return null;
+  if (rho < 0.00001) return { lon: app.worldCenterLon, lat: app.worldCenterLat };
+
+  const centerLat = app.worldCenterLat * Math.PI / 180;
+  const c = Math.asin(rho);
+  const sinC = Math.sin(c);
+  const cosC = Math.cos(c);
+  const lat = Math.asin(cosC * Math.sin(centerLat) + (y * sinC * Math.cos(centerLat)) / rho);
+  const lon = app.worldCenterLon * Math.PI / 180 + Math.atan2(
+    x * sinC,
+    rho * Math.cos(centerLat) * cosC - y * Math.sin(centerLat) * sinC
+  );
+  return { lon: normalizeDegrees(lon * 180 / Math.PI), lat: lat * 180 / Math.PI };
+}
+
 function worldProjection(band) {
   const point = projectWorldPoint(band.lon, band.lat, WORLD_GLOBE_MARKER_RADIUS * app.worldZoom, 50);
   const visibleDepth = point.visible ? point.depth : 0.05;
@@ -1709,6 +2010,7 @@ function worldProjection(band) {
 }
 
 function worldRingLabelLimit() {
+  if (window.innerWidth <= 520) return app.worldFullscreen ? 8 : 7;
   if (app.worldFullscreen) return 18;
   if (app.worldFilter === "taste") return 12;
   return 10;
@@ -1904,15 +2206,24 @@ function drawWorldAtlasCountries(ctx, cx, cy, radius) {
   if (!app.worldCountries.length) return false;
   ctx.save();
   app.worldCountries.forEach((country) => {
+    const focused = canonicalWorldCountry(country.name).toLowerCase() === canonicalWorldCountry(app.worldCountryName).toLowerCase();
+    const dimmed = Boolean(app.worldCountryName) && !focused;
+    const taste = countryTasteMatch(country.name);
     country.rings.forEach((ring) => {
       ctx.beginPath();
       const drew = drawProjectedPolyline(ctx, ring, cx, cy, radius, true);
       if (!drew) return;
-      ctx.fillStyle = atlasCountryFill(country);
+      ctx.globalAlpha = dimmed ? 0.32 : 1;
+      ctx.fillStyle = focused ? "rgba(57,245,176,0.92)" : atlasCountryFill(country);
       ctx.fill();
-      ctx.lineWidth = Math.max(0.55, radius / 420);
-      ctx.strokeStyle = "rgba(247,244,232,0.3)";
+      if (!focused && taste) {
+        ctx.fillStyle = countryTasteOverlay(taste.score);
+        ctx.fill();
+      }
+      ctx.lineWidth = focused ? Math.max(2, radius / 150) : Math.max(0.55, radius / 420);
+      ctx.strokeStyle = focused ? "rgba(255,255,255,0.92)" : "rgba(247,244,232,0.3)";
       ctx.stroke();
+      ctx.globalAlpha = 1;
     });
   });
   ctx.restore();
@@ -2217,12 +2528,71 @@ function refreshWorldGlobe() {
   drawWorldGlobe();
   updateWorldMarkerPositions();
   renderWorldTourLayer();
+  const profile = rhythmProfile(app.payload?.current);
+  const focusBand = activeWorldBand();
+  const focusPoint = focusBand ? worldProjection(focusBand) : null;
+  const focusScore = focusBand ? bandCatalogTasteMatch(focusBand).score : 0;
+  const beat = playbackSeconds() * profile.tempo / 60;
+  const pulse = app.playing ? Math.pow(Math.max(0, Math.sin(beat * Math.PI * 2)), 7) : 0;
+  els.worldGlobe?.classList.toggle("playing", app.playing);
+  els.worldGlobe?.style.setProperty("--world-energy", profile.energy.toFixed(3));
+  els.worldGlobe?.style.setProperty("--world-pulse", pulse.toFixed(3));
+  els.worldGlobe?.style.setProperty("--world-glow", `${Math.round(16 + profile.energy * 34 + pulse * 20)}px`);
+  app.world3D?.update({
+    energy: profile.energy,
+    beat,
+    playing: app.playing,
+    centerLon: app.worldCenterLon,
+    centerLat: app.worldCenterLat,
+    focusX: focusPoint?.x || 50,
+    focusY: focusPoint?.y || 50,
+    focusVisible: Boolean(focusPoint?.visible),
+    focusScore
+  });
+}
+
+function initWorld3D() {
+  if (app.world3D || !window.RadioXWorld3D || !els.world3dCanvas) return;
+  try {
+    app.world3D = window.RadioXWorld3D;
+    app.world3D.mount(els.world3dCanvas);
+    refreshWorldGlobe();
+  } catch (error) {
+    app.world3D = null;
+    els.world3dCanvas.hidden = true;
+    console.warn("World 3D enhancement unavailable", error);
+  }
+}
+
+function animateWorldViewTo(lon, lat, zoom = Math.max(1.12, app.worldZoom)) {
+  const startLon = app.worldCenterLon;
+  app.worldAutoRotate = false;
+  app.worldVelocityLon = 0;
+  app.worldVelocityLat = 0;
+  app.worldFocusAnimation = {
+    startedAt: performance.now(),
+    duration: 820,
+    startLon,
+    deltaLon: normalizeDegrees(Number(lon) - startLon),
+    startLat: app.worldCenterLat,
+    targetLat: clampValue(Number(lat), -62, 62),
+    startZoom: app.worldZoom,
+    targetZoom: clampValue(zoom, 0.78, app.worldFullscreen ? 4 : 3)
+  };
 }
 
 function animateWorldGlobe(timestamp = 0) {
   const delta = app.worldLastFrameAt ? Math.min(48, timestamp - app.worldLastFrameAt) : 16;
   app.worldLastFrameAt = timestamp;
-  if (!app.worldDragging && app.worldAutoRotate) {
+  if (!app.worldDragging && app.worldFocusAnimation) {
+    const animation = app.worldFocusAnimation;
+    const progress = clampValue((timestamp - animation.startedAt) / animation.duration, 0, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    app.worldCenterLon = normalizeDegrees(animation.startLon + animation.deltaLon * eased);
+    app.worldCenterLat = animation.startLat + (animation.targetLat - animation.startLat) * eased;
+    app.worldZoom = animation.startZoom + (animation.targetZoom - animation.startZoom) * eased;
+    if (progress >= 1) app.worldFocusAnimation = null;
+  } else if (!app.worldDragging && app.worldAutoRotate) {
     app.worldCenterLon = normalizeDegrees(app.worldCenterLon + app.worldVelocityLon * delta);
     app.worldCenterLat = clampValue(app.worldCenterLat + app.worldVelocityLat * delta, -62, 62);
     app.worldVelocityLon += (0.006 - app.worldVelocityLon) * 0.018;
@@ -2253,8 +2623,14 @@ function albumCoverInitials(album) {
 
 function syncWorldTabs() {
   app.worldFilter = normalizeWorldFilter(localStorage.getItem(WORLD_FILTER_STORAGE_KEY) || app.worldFilter);
+  app.worldEra = WORLD_ERAS.has(localStorage.getItem(WORLD_ERA_STORAGE_KEY))
+    ? localStorage.getItem(WORLD_ERA_STORAGE_KEY)
+    : "all";
   els.worldTabs?.querySelectorAll("[data-world-filter]").forEach((button) => {
     button.classList.toggle("active", normalizeWorldFilter(button.dataset.worldFilter) === app.worldFilter);
+  });
+  els.worldEra?.querySelectorAll("[data-world-era]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.worldEra === app.worldEra);
   });
 }
 
@@ -2294,6 +2670,12 @@ function bindWorldMarkerButtons() {
     button.addEventListener("pointerenter", (event) => {
       event.stopPropagation();
       const id = bandId();
+      if (app.worldAutoRotate) {
+        app.worldHoverPausedRotation = true;
+        app.worldAutoRotate = false;
+        app.worldVelocityLon = 0;
+        app.worldVelocityLat = 0;
+      }
       setWorldHoverBand(id);
       showWorldTourTooltip(worldBandById(id), event);
     });
@@ -2303,25 +2685,111 @@ function bindWorldMarkerButtons() {
     });
     button.addEventListener("pointerleave", (event) => {
       event.stopPropagation();
+      const resumeRotation = app.worldHoverPausedRotation;
+      app.worldHoverPausedRotation = false;
       setWorldHoverBand("");
       hideWorldTourTooltip();
+      if (resumeRotation) {
+        window.setTimeout(() => {
+          if (!app.worldDragging && !app.worldHoverBandId && !app.worldFocusAnimation && !app.worldCountryLocked) {
+            app.worldAutoRotate = true;
+            app.worldVelocityLon = 0.006;
+          }
+        }, 180);
+      }
     });
   });
 }
 
-function renderWorldBands() {
+function renderWorldAlbumOrbit(band = selectedWorldBand()) {
+  if (!els.worldAlbumOrbit) return;
+  const entries = band ? worldAlbumsForBand(band).slice(0, 5) : [];
+  if (!band || !entries.length) {
+    els.worldAlbumOrbit.innerHTML = "";
+    return;
+  }
+  const compactOrbit = window.innerWidth <= 520;
+  const radius = compactOrbit
+    ? entries.length <= 2 ? 15 : 17
+    : entries.length <= 2 ? 21 : 24;
+  const nodes = entries.map((entry, index) => {
+    const angle = (-88 + index * (360 / entries.length)) * Math.PI / 180;
+    const x = 50 + Math.cos(angle) * radius;
+    const y = 50 + Math.sin(angle) * radius;
+    const key = worldAlbumKey(band, entry.album);
+    const cover = app.worldAlbumCovers.get(albumCoverKey(band, entry.album));
+    return `
+      <button class="world-album-node ${key === app.worldAlbumKey ? "active" : ""}" type="button"
+        data-world-orbit-band-id="${escapeAttr(band.id)}" data-world-orbit-album-index="${entry.albumIndex}"
+        title="${escapeAttr(`${entry.album.title} · play ${entry.album.lead || entry.album.title}`)}"
+        aria-label="Play ${escapeAttr(entry.album.title)}"
+        style="--x:${x.toFixed(2)}; --y:${y.toFixed(2)}; --delay:${(index * -0.38).toFixed(2)}s;">
+        ${cover ? `<img src="${escapeAttr(cover)}" alt="">` : `<span>${escapeHtml(albumCoverInitials(entry.album))}</span>`}
+      </button>
+    `;
+  });
+  const links = entries.map((entry, index) => {
+    const angle = (-88 + index * (360 / entries.length)) * Math.PI / 180;
+    const x = 50 + Math.cos(angle) * radius;
+    const y = 50 + Math.sin(angle) * radius;
+    return `<line x1="50" y1="50" x2="${x.toFixed(2)}" y2="${y.toFixed(2)}" style="--line-delay:${(index * -0.42).toFixed(2)}s"></line>`;
+  }).join("");
+  els.worldAlbumOrbit.innerHTML = `
+    <svg class="world-album-links" viewBox="0 0 100 100" aria-hidden="true" preserveAspectRatio="none">
+      ${links}
+      <circle cx="50" cy="50" r="1.15"></circle>
+    </svg>
+    ${nodes.join("")}
+  `;
+  window.requestAnimationFrame(resolveWorldOverlayCollisions);
+}
+
+function resolveWorldOverlayCollisions() {
+  if (!els.worldMarkers || !els.worldAlbumOrbit) return;
+  const nodes = [...els.worldAlbumOrbit.querySelectorAll(".world-album-node")]
+    .map((node) => node.getBoundingClientRect());
+  els.worldMarkers.querySelectorAll(".world-ring-label").forEach((label) => {
+    label.classList.remove("orbit-collision");
+    if (label.classList.contains("selected") || label.style.display === "none") return;
+    const box = label.getBoundingClientRect();
+    const overlaps = nodes.some((node) => !(
+      box.right + 3 < node.left
+      || node.right + 3 < box.left
+      || box.bottom + 3 < node.top
+      || node.bottom + 3 < box.top
+    ));
+    label.classList.toggle("orbit-collision", overlaps);
+  });
+}
+
+function renderWorldCountryFocus() {
+  if (!els.worldCountryFocus) return;
+  const active = Boolean(app.worldCountryName);
+  els.worldPanel?.classList.toggle("country-focused", active);
+  els.worldCountryFocus.hidden = !active;
+  if (!active) return;
+  const count = filteredWorldBands().length;
+  els.worldCountryName.textContent = app.worldCountryName;
+  els.worldCountryMatches.textContent = `${count} TASTE ${count === 1 ? "MATCH" : "MATCHES"}`;
+  els.worldCountryFocus.dataset.locked = app.worldCountryLocked ? "true" : "false";
+}
+
+function renderWorldBands({ preserveView = false } = {}) {
   if (!els.worldMarkers || !els.bandDetail) return;
   const bands = filteredWorldBands();
+  renderWorldCountryFocus();
   if (!bands.length) {
     els.worldMarkers.innerHTML = "";
+    if (els.worldAlbumOrbit) els.worldAlbumOrbit.innerHTML = "";
     els.bandDetail.innerHTML = `
       <div>
-        <p class="band-detail-kicker">${escapeHtml(worldAlbumFilterLabel())}</p>
-        <h3>没有匹配专辑</h3>
-        <p>这个图层暂时没有可显示的专辑。</p>
+        <p class="band-detail-kicker">${escapeHtml(app.worldCountryName || worldAlbumFilterLabel())}</p>
+        <h3>没有接近的乐队</h3>
+        <p>${escapeHtml(app.worldCountryName ? `当前 ${worldAlbumFilterLabel()} 图层中，没有达到 ${WORLD_COUNTRY_TASTE_MIN}% 匹配度的乐队。` : "这个图层暂时没有可显示的专辑。")}</p>
       </div>
     `;
     if (els.worldRankStrip) els.worldRankStrip.innerHTML = "";
+    refreshWorldGlobe();
     return;
   }
   const selected = selectedWorldBand();
@@ -2331,7 +2799,7 @@ function renderWorldBands() {
     app.worldAlbumKey = worldAlbumKey(selected, selectedAlbums[0].album);
   }
   if (app.worldHoverBandId && !worldBandById(app.worldHoverBandId)) app.worldHoverBandId = "";
-  if (selected) focusWorldBand(selected);
+  if (selected && !preserveView) focusWorldBand(selected);
   const pointMap = worldBandPointMap(bands);
   const focusId = focusedWorldBandId();
   const ringSlotMap = worldRingSlotMap(bands, pointMap);
@@ -2340,6 +2808,7 @@ function renderWorldBands() {
   const markerHtml = bands.map((band) => {
     const albumCount = worldAlbumsForBand(band).length;
     const match = bandBestTasteMatch(band);
+    const catalogMatch = bandCatalogTasteMatch(band);
     const point = pointMap.get(band.id) || worldProjection(band);
     const isSelected = band.id === app.worldBandId;
     const isHovered = band.id === focusId;
@@ -2350,11 +2819,13 @@ function renderWorldBands() {
       isHovered ? "hovered" : "",
       topRank ? "sales-top" : "",
       band.taste ? "taste-anchor" : "",
+      tasteMatchTier(catalogMatch.score),
       point.clusterSize > 1 ? "clustered" : ""
     ].filter(Boolean).join(" ");
     return `
       <button class="${classes}" type="button" data-world-band-id="${escapeAttr(band.id)}"
         data-cluster-count="${escapeAttr(point.clusterSize || "")}"
+        data-taste-match="${catalogMatch.score}"
         title="${escapeAttr(`${band.name} · ${albumCount} albums · match ${match.score}% · ${band.country}`)}"
         style="${point.visible ? "" : "display:none;"} --x:${point.x.toFixed(2)}; --y:${point.y.toFixed(2)}; --s:${point.scale.toFixed(2)}; --depth:${point.depth.toFixed(2)}; --z:${point.z};">
       </button>
@@ -2394,6 +2865,7 @@ function renderWorldBands() {
   const active = activeWorldBand();
   renderWorldRankStrip(active);
   renderBandDetail(active);
+  renderWorldAlbumOrbit(selected);
   loadWorldAlbumCovers(active);
   refreshWorldGlobe();
 }
@@ -2513,7 +2985,10 @@ function loadWorldAlbumCovers(band) {
       const cover = spotifyAlbumCoverUrl(spotifyTrack);
       if (cover) app.worldAlbumCovers.set(key, cover);
       app.worldAlbumLookup.delete(key);
-      if (app.worldBandId === band.id) renderBandDetail(band);
+      if (app.worldBandId === band.id) {
+        renderBandDetail(band);
+        renderWorldAlbumOrbit(band);
+      }
     }).catch((error) => {
       app.worldAlbumLookup.delete(key);
       console.warn("World album cover skipped", error);
@@ -2573,10 +3048,11 @@ function selectWorldBand(id, albumKey = "") {
   if (!band) return;
   app.worldBandId = band.id;
   app.worldHoverBandId = "";
+  app.worldHoverPausedRotation = false;
   const albums = worldAlbumsForBand(band);
   app.worldAlbumKey = albumKey || (albums[0] ? worldAlbumKey(band, albums[0].album) : "");
-  focusWorldBand(band);
-  renderWorldBands();
+  animateWorldViewTo(band.lon, band.lat);
+  renderWorldBands({ preserveView: true });
 }
 
 function setWorldHoverBand(id = "") {
@@ -2602,10 +3078,36 @@ function setWorldFullscreen(fullscreen) {
   }
   window.setTimeout(refreshWorldGlobe, 60);
   window.setTimeout(refreshWorldGlobe, 240);
+  window.setTimeout(resolveWorldOverlayCollisions, 260);
 }
 
 function toggleWorldFullscreen() {
   setWorldFullscreen(!app.worldFullscreen);
+}
+
+function setWorldCountryFocus(countryName, { locked = false, focusPoint = null } = {}) {
+  const nextName = canonicalWorldCountry(countryName);
+  if (!nextName) return;
+  const countryCenter = WORLD_COUNTRY_LABELS.find((item) => canonicalWorldCountry(item.name) === nextName) || focusPoint;
+  const changed = nextName !== app.worldCountryName;
+  app.worldCountryName = nextName;
+  app.worldCountryLocked = Boolean(locked);
+  if (locked && countryCenter) animateWorldViewTo(countryCenter.lon, countryCenter.lat);
+  if (!changed) {
+    renderWorldCountryFocus();
+    refreshWorldGlobe();
+    return;
+  }
+  app.worldHoverBandId = "";
+  hideWorldTourTooltip();
+  renderWorldBands({ preserveView: true });
+}
+
+function clearWorldCountryFocus() {
+  app.worldCountryName = "";
+  app.worldCountryLocked = false;
+  app.worldHoverBandId = "";
+  renderWorldBands({ preserveView: true });
 }
 
 function handleWorldWheel(event) {
@@ -2625,11 +3127,12 @@ function handleWorldWheel(event) {
 
 function startWorldDrag(event) {
   if (!els.worldGlobe || event.button > 0) return;
-  const target = event.target.closest?.("[data-world-band-id]");
+  const target = event.target.closest?.("[data-world-band-id], [data-world-label-band-id], [data-world-orbit-band-id]");
   if (target) return;
   setWorldHoverBand("");
   hideWorldTourTooltip();
   app.worldAutoRotate = false;
+  app.worldFocusAnimation = null;
   app.worldDragging = true;
   app.worldDragStart = {
     x: event.clientX,
@@ -2638,7 +3141,8 @@ function startWorldDrag(event) {
     lat: app.worldCenterLat,
     lastX: event.clientX,
     lastY: event.clientY,
-    lastAt: performance.now()
+    lastAt: performance.now(),
+    moved: false
   };
   app.worldVelocityLon = 0;
   app.worldVelocityLat = 0;
@@ -2651,8 +3155,17 @@ function moveWorldDrag(event) {
   event.preventDefault();
   const dx = event.clientX - app.worldDragStart.x;
   const dy = event.clientY - app.worldDragStart.y;
+  if (Math.hypot(dx, dy) > 5) {
+    app.worldDragStart.moved = true;
+    app.worldCountryLocked = false;
+  }
   app.worldCenterLon = normalizeDegrees(app.worldDragStart.lon - dx * 0.42);
   app.worldCenterLat = clampValue(app.worldDragStart.lat + dy * 0.32, -62, 62);
+
+  if (app.worldDragStart.moved) {
+    const countryName = worldCountryAt(app.worldCenterLon, app.worldCenterLat);
+    if (countryName) setWorldCountryFocus(countryName);
+  }
 
   const now = performance.now();
   const elapsed = Math.max(12, now - app.worldDragStart.lastAt);
@@ -2666,6 +3179,12 @@ function moveWorldDrag(event) {
 
 function endWorldDrag(event) {
   if (!app.worldDragging) return;
+  const dragStart = app.worldDragStart;
+  if (!dragStart?.moved) {
+    const point = worldPointFromClient(event.clientX, event.clientY);
+    const countryName = point ? worldCountryAt(point.lon, point.lat) : "";
+    if (countryName) setWorldCountryFocus(countryName, { locked: true, focusPoint: point });
+  }
   app.worldDragging = false;
   app.worldDragStart = null;
   app.worldVelocityLon = 0;
@@ -2681,6 +3200,94 @@ function renderTasteTags(profile) {
     .join("");
 }
 
+function djRecommendationCapsules(message) {
+  const text = String(message?.text || "");
+  if (!/(推荐|推|听|放|接|队列|播放)/.test(text)) return [];
+  const nonTrackTitles = new Set([
+    "结果", "列表", "歌单", "播放列表", "队列", "收藏", "推荐", "歌曲", "音乐",
+    "result", "list", "playlist", "queue", "spotify", "radiox"
+  ]);
+  const catalogArtists = new Map();
+  (app.payload?.queue || []).forEach((track) => {
+    if (track?.title && track?.artist) catalogArtists.set(track.title.toLowerCase(), track.artist);
+  });
+  worldBands().forEach((band) => {
+    (band.albums || []).forEach((album) => {
+      [album.lead, ...(album.tracks || [])].filter(Boolean).forEach((title) => {
+        catalogArtists.set(String(title).toLowerCase(), band.name);
+      });
+    });
+  });
+  const artists = [...new Set([
+    ...(app.payload?.profile?.tasteAnchors || []),
+    ...(app.payload?.queue || []).map((track) => track.artist),
+    ...worldBands().map((band) => band.name)
+  ].filter(Boolean))].sort((a, b) => b.length - a.length);
+  const seen = new Set();
+  return [...text.matchAll(/《([^》]{1,90})》/g)].map((match) => {
+    const title = match[1].trim();
+    const nearby = text.slice(Math.max(0, match.index - 80), match.index + match[0].length + 80).toLowerCase();
+    const artist = catalogArtists.get(title.toLowerCase())
+      || artists.find((name) => nearby.includes(String(name).toLowerCase()))
+      || "RadioX Request";
+    return { title, artist };
+  }).filter((item) => {
+    if (nonTrackTitles.has(item.title.toLowerCase())) return false;
+    const key = `${item.artist}:${item.title}`.toLowerCase();
+    if (!item.title || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 4);
+}
+
+function renderDjRecommendationCapsules(message) {
+  const recommendations = djRecommendationCapsules(message);
+  if (!recommendations.length) return "";
+  return `
+    <div class="dj-recommendations" aria-label="DJ recommendations">
+      ${recommendations.map((item) => `
+        <button type="button" data-dj-track-title="${escapeAttr(item.title)}" data-dj-track-artist="${escapeAttr(item.artist)}">
+          <i aria-hidden="true">▶</i><span>${escapeHtml(item.title)}</span><small>${escapeHtml(item.artist)}</small>
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
+async function queueDjRecommendation(button) {
+  const title = button?.dataset.djTrackTitle || "";
+  const artist = button?.dataset.djTrackArtist || "RadioX Request";
+  if (!title || button.disabled) return;
+  button.disabled = true;
+  button.classList.add("queueing");
+  try {
+    const track = {
+      id: `dj-${stableVoiceHash(`${artist}:${title}`)}`,
+      title,
+      artist,
+      query: `${title} ${artist}`,
+      genres: ["dj-request"],
+      moods: [app.payload?.context?.mood || "focus"],
+      dayParts: [app.payload?.context?.now?.dayPart || "workday"],
+      scheduleTags: ["open"],
+      energy: 52,
+      duration: 260,
+      story: { headline: "DJ 推荐", text: "从 RadioX 对话里直接加入的推荐。" }
+    };
+    const payload = await api("/api/queue-track", {
+      method: "POST",
+      body: JSON.stringify({ play: false, track })
+    });
+    render(payload);
+    setServerState("QUEUED");
+  } catch (error) {
+    console.warn(error);
+    button.disabled = false;
+    button.classList.remove("queueing");
+    setServerState("QUEUE ERR");
+  }
+}
+
 function renderDjChat(messages) {
   if (!els.djChatLog) return;
   els.djChatLog.innerHTML = (messages || []).map((message) => {
@@ -2691,6 +3298,7 @@ function renderDjChat(messages) {
       <article class="dj-message ${role}${thinking ? " thinking" : ""}">
         <small>${name}</small>
         <p>${thinking ? "<span class=\"thinking-dots\"><i></i><i></i><i></i></span>" : escapeHtml(message.text || "")}</p>
+        ${role === "assistant" && !thinking ? renderDjRecommendationCapsules(message) : ""}
       </article>
     `;
   }).join("");
@@ -2974,6 +3582,7 @@ function applyLocalPlayState(playing) {
   const next = Boolean(playing);
   if (next === app.playing) {
     els.playButton.textContent = app.playing ? "Ⅱ" : "▶";
+    els.station?.classList.toggle("is-playing", app.playing);
     return false;
   }
   const elapsed = playbackSeconds();
@@ -2984,6 +3593,7 @@ function applyLocalPlayState(playing) {
     app.elapsedBeforePlay = elapsed;
   }
   els.playButton.textContent = app.playing ? "Ⅱ" : "▶";
+  els.station?.classList.toggle("is-playing", app.playing);
   return true;
 }
 
@@ -3263,6 +3873,28 @@ async function jumpToQueueTrack(index) {
   }
 }
 
+async function reorderQueue(draggedId, targetId) {
+  const order = (app.payload?.queue || []).map((track) => track.id);
+  const from = order.indexOf(draggedId);
+  const to = order.indexOf(targetId);
+  if (from < 0 || to < 0 || from === to) return;
+  order.splice(from, 1);
+  order.splice(to, 0, draggedId);
+  setServerState("REORDER");
+  try {
+    const payload = await api("/api/queue/reorder", {
+      method: "POST",
+      body: JSON.stringify({ trackIds: order })
+    });
+    render(payload);
+    setServerState("READY");
+  } catch (error) {
+    console.warn(error);
+    render(app.payload);
+    setServerState("ORDER ERR");
+  }
+}
+
 function spotifyTrackId(spotifyTrack) {
   return spotifyTrack?.id || String(spotifyTrack?.uri || "").split(":").pop() || "";
 }
@@ -3508,6 +4140,7 @@ function applySpotifyPlayerState(spotifyState) {
   if (autoAdvancing) return true;
   app.playing = !spotifyState.paused;
   els.playButton.textContent = app.playing ? "Ⅱ" : "▶";
+  els.station?.classList.toggle("is-playing", app.playing);
   renderProgress();
   updateSpotifyButton();
   return true;
@@ -3553,6 +4186,11 @@ async function syncSpotifyProgressFromPlayer() {
 async function initSpotify() {
   const serverConfig = await api("/api/config");
   app.serviceConfig = serverConfig;
+  if (!window.isSecureContext && serverConfig.httpsAvailable) {
+    setSystemIssue("Mobile", `HTTPS required for Spotify/PWA: ${serverConfig.secureOrigin}`);
+  } else {
+    setSystemIssue("Mobile", "");
+  }
   const savedClientId = localStorage.getItem(SPOTIFY_CLIENT_ID_KEY);
   const config = {
     ...serverConfig,
@@ -3564,9 +4202,11 @@ async function initSpotify() {
   if (els.spotifyClientIdInput) els.spotifyClientIdInput.value = config.spotifyClientId || "";
   app.spotify = new SpotifyBridge();
   await app.spotify.init(config).catch((error) => {
-    console.warn(error);
-    setSystemIssue("Spotify", error.message || "init failed");
-    setServerState(/spotify/i.test(error.message || "") ? "LOGIN ERR" : "READY");
+    const message = error.message || "init failed";
+    const needsLogin = /not authenticated/i.test(message);
+    if (!needsLogin) console.warn(error);
+    setSystemIssue("Spotify", needsLogin ? "" : message);
+    setServerState(needsLogin ? "READY" : /spotify/i.test(message) ? "LOGIN ERR" : "READY");
     return app.spotify.status();
   });
   renderSystemStatus();
@@ -3690,6 +4330,68 @@ function bindEvents() {
     if (!item) return;
     jumpToQueueTrack(Number(item.dataset.queueIndex));
   });
+  els.queue.addEventListener("dragstart", (event) => {
+    const item = event.target.closest("li[data-queue-track-id]");
+    if (!item) return;
+    app.queueDragTrackId = item.dataset.queueTrackId;
+    item.classList.add("dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", app.queueDragTrackId);
+  });
+  els.queue.addEventListener("dragover", (event) => {
+    const item = event.target.closest("li[data-queue-track-id]");
+    if (!item || item.dataset.queueTrackId === app.queueDragTrackId) return;
+    event.preventDefault();
+    els.queue.querySelectorAll(".drop-target").forEach((node) => node.classList.remove("drop-target"));
+    item.classList.add("drop-target");
+  });
+  els.queue.addEventListener("drop", (event) => {
+    const item = event.target.closest("li[data-queue-track-id]");
+    event.preventDefault();
+    if (item && app.queueDragTrackId) reorderQueue(app.queueDragTrackId, item.dataset.queueTrackId);
+    app.queueDragTrackId = "";
+  });
+  els.queue.addEventListener("dragend", () => {
+    app.queueDragTrackId = "";
+    els.queue.querySelectorAll(".dragging, .drop-target").forEach((node) => node.classList.remove("dragging", "drop-target"));
+  });
+  els.queue.addEventListener("pointerdown", (event) => {
+    const grip = event.target.closest(".queue-grip");
+    const item = grip?.closest("li[data-queue-track-id]");
+    if (!item || event.button > 0) return;
+    app.queuePointerDrag = {
+      pointerId: event.pointerId,
+      trackId: item.dataset.queueTrackId,
+      startX: event.clientX,
+      startY: event.clientY,
+      active: false
+    };
+    grip.setPointerCapture?.(event.pointerId);
+  });
+  els.queue.addEventListener("pointermove", (event) => {
+    const drag = app.queuePointerDrag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (!drag.active && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 8) return;
+    drag.active = true;
+    event.preventDefault();
+    els.queue.querySelector(`[data-queue-track-id="${CSS.escape(drag.trackId)}"]`)?.classList.add("dragging");
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest("li[data-queue-track-id]");
+    els.queue.querySelectorAll(".drop-target").forEach((node) => node.classList.remove("drop-target"));
+    if (target && target.dataset.queueTrackId !== drag.trackId) target.classList.add("drop-target");
+  });
+  const finishQueuePointerDrag = (event) => {
+    const drag = app.queuePointerDrag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest("li[data-queue-track-id]");
+    app.queuePointerDrag = null;
+    els.queue.querySelectorAll(".dragging, .drop-target").forEach((node) => node.classList.remove("dragging", "drop-target"));
+    if (drag.active && target && target.dataset.queueTrackId !== drag.trackId) {
+      event.preventDefault();
+      reorderQueue(drag.trackId, target.dataset.queueTrackId);
+    }
+  };
+  els.queue.addEventListener("pointerup", finishQueuePointerDrag);
+  els.queue.addEventListener("pointercancel", finishQueuePointerDrag);
   els.worldGlobe?.addEventListener("pointerdown", startWorldDrag);
   els.worldGlobe?.addEventListener("pointermove", moveWorldDrag);
   els.worldGlobe?.addEventListener("pointerup", endWorldDrag);
@@ -3700,7 +4402,11 @@ function bindEvents() {
     toggleWorldFullscreen();
   });
   els.worldFullscreenButton?.addEventListener("click", toggleWorldFullscreen);
-  window.addEventListener("resize", refreshWorldGlobe);
+  els.worldCountryClear?.addEventListener("click", clearWorldCountryFocus);
+  window.addEventListener("resize", () => {
+    refreshWorldGlobe();
+    window.requestAnimationFrame(resolveWorldOverlayCollisions);
+  });
   els.worldMarkers?.addEventListener("click", (event) => {
     const item = event.target.closest("[data-world-band-id]");
     if (!item) return;
@@ -3722,6 +4428,13 @@ function bindEvents() {
     setWorldHoverBand("");
     hideWorldTourTooltip();
   });
+  els.worldAlbumOrbit?.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-world-orbit-band-id]");
+    if (!item) return;
+    const albumIndex = Number(item.dataset.worldOrbitAlbumIndex);
+    selectWorldBand(item.dataset.worldOrbitBandId);
+    playWorldAlbum(albumIndex).catch(console.warn);
+  });
   els.worldRankStrip?.addEventListener("click", (event) => {
     const item = event.target.closest("[data-world-band-id]");
     if (!item) return;
@@ -3739,6 +4452,21 @@ function bindEvents() {
     });
     const currentBand = worldBandById(app.worldBandId);
     const nextBand = currentBand || filteredWorldBands()[0] || null;
+    app.worldBandId = nextBand?.id || "";
+    const nextAlbum = nextBand ? worldAlbumsForBand(nextBand)[0]?.album : null;
+    app.worldAlbumKey = nextAlbum ? worldAlbumKey(nextBand, nextAlbum) : "";
+    renderWorldBands();
+  });
+  els.worldEra?.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-world-era]");
+    if (!item || !WORLD_ERAS.has(item.dataset.worldEra)) return;
+    app.worldEra = item.dataset.worldEra;
+    localStorage.setItem(WORLD_ERA_STORAGE_KEY, app.worldEra);
+    els.worldEra.querySelectorAll("[data-world-era]").forEach((button) => {
+      button.classList.toggle("active", button === item);
+    });
+    app.worldHoverBandId = "";
+    const nextBand = filteredWorldBands()[0] || null;
     app.worldBandId = nextBand?.id || "";
     const nextAlbum = nextBand ? worldAlbumsForBand(nextBand)[0]?.album : null;
     app.worldAlbumKey = nextAlbum ? worldAlbumKey(nextBand, nextAlbum) : "";
@@ -3821,6 +4549,10 @@ function bindEvents() {
     saveTasteProfile().catch(console.warn);
   });
   els.djChatForm?.addEventListener("submit", sendDjChat);
+  els.djChatLog?.addEventListener("click", (event) => {
+    const recommendation = event.target.closest("[data-dj-track-title]");
+    if (recommendation) queueDjRecommendation(recommendation);
+  });
   els.spotifyLoginButton?.addEventListener("click", async () => {
     const clientId = els.spotifyClientIdInput.value.trim();
     if (clientId && clientId !== localStorage.getItem(SPOTIFY_CLIENT_ID_KEY)) {
@@ -3852,6 +4584,8 @@ function bindEvents() {
   });
 }
 
+window.addEventListener("radiox:world3d-ready", initWorld3D);
+
 async function main() {
   if (canonicalizeLoopbackOrigin()) return;
   consumeTransferredSpotifyClientId();
@@ -3865,6 +4599,7 @@ async function main() {
   setInterval(() => syncExternalState().catch(console.warn), 2000);
   setInterval(() => syncFavoriteStatusFromSpotify(app.payload?.current).catch(console.warn), 15000);
   bindEvents();
+  initWorld3D();
   syncWorldTabs();
   await initSpotify();
   await refresh();

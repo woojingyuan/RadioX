@@ -3,14 +3,18 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#050807">
+    <meta name="theme-color" content="#090d0d">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="RadioX">
     <title>RadioX</title>
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/icons/icon.svg">
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/styles.css?v=20260510-ring4">
+    <link rel="stylesheet" href="/styles.css?v=20260723-metal1">
   </head>
   <body>
     <main class="shell">
@@ -94,8 +98,10 @@
         </div>
 
         <section class="player-panel" aria-label="Current track">
+          <div class="player-ambient" id="playerAmbient" aria-hidden="true"></div>
           <div class="track-row">
             <div class="album-art-shell">
+              <span class="album-halo" aria-hidden="true"></span>
               <div class="album-art" id="albumArt" aria-label="Album cover">
                 <span>RX</span>
               </div>
@@ -104,6 +110,7 @@
               <p class="label">NOW PLAYING</p>
               <h2 id="trackTitle">Loading...</h2>
               <p id="trackArtist">RadioX is tuning the room</p>
+              <p id="trackReason" class="track-reason"></p>
             </div>
             <button class="icon-button primary" id="playButton" type="button" title="Play or pause" aria-label="Play or pause">▶</button>
           </div>
@@ -113,6 +120,8 @@
             <input id="progress" type="range" min="0" max="1000" value="0" aria-label="Playback progress">
             <span id="duration">0:00</span>
           </div>
+
+          <div class="track-signal" aria-hidden="true"><i></i><span></span><i></i></div>
 
           <div class="transport">
             <button class="icon-button" id="prevButton" type="button" title="Previous track" aria-label="Previous track">⏮</button>
@@ -131,6 +140,19 @@
           <div class="world-head">
             <div>
               <p class="label">WORLD ALBUMS</p>
+              <div class="world-taste-legend" id="worldTasteLegend" aria-label="Taste match levels">
+                <span><i class="high"></i>80+ CLOSE</span>
+                <span><i class="discovery"></i>65+ DISCOVER</span>
+                <span><i class="distant"></i>DISTANT</span>
+              </div>
+              <div class="world-country-focus" id="worldCountryFocus" hidden aria-live="polite">
+                <span>
+                  <small>COUNTRY</small>
+                  <strong id="worldCountryName"></strong>
+                  <em id="worldCountryMatches"></em>
+                </span>
+                <button id="worldCountryClear" type="button" title="Show all countries" aria-label="Show all countries">×</button>
+              </div>
             </div>
             <div class="world-actions">
               <div class="world-tabs" role="tablist" aria-label="World album layer">
@@ -141,12 +163,23 @@
               <button class="world-fullscreen-button" id="worldFullscreenButton" type="button">FULL</button>
             </div>
           </div>
+          <div class="world-era" id="worldEra" role="tablist" aria-label="Album era">
+            <button class="active" type="button" data-world-era="all">ALL</button>
+            <button type="button" data-world-era="60s">60s</button>
+            <button type="button" data-world-era="70s">70s</button>
+            <button type="button" data-world-era="80s">80s</button>
+            <button type="button" data-world-era="90s">90s</button>
+            <button type="button" data-world-era="00s">00s</button>
+            <button type="button" data-world-era="now">NOW</button>
+          </div>
           <div class="world-layout">
             <div class="globe-stage">
               <div class="globe-orb" id="worldGlobe">
                 <canvas id="worldCanvas" class="world-canvas" width="720" height="720" aria-hidden="true"></canvas>
+                <canvas id="world3dCanvas" class="world-3d-canvas" aria-hidden="true"></canvas>
                 <div id="worldTourLayer" class="world-tour-layer" aria-hidden="true"></div>
                 <div id="worldMarkers" class="world-markers"></div>
+                <div id="worldAlbumOrbit" class="world-album-orbit" aria-label="Selected artist albums"></div>
               </div>
               <div id="worldTourTooltip" class="world-tour-tooltip" hidden></div>
               <div class="world-rank-strip" id="worldRankStrip"></div>
@@ -158,8 +191,8 @@
         <section class="chat-panel" aria-label="Conversation with RadioX">
           <section class="dj-chat" aria-label="Conversation with RadioX">
             <div class="dj-chat-head">
-              <span>ASK THE DJ</span>
-              <strong>MEMORY ON</strong>
+              <span><i></i> RADIO LINK</span>
+              <strong>MEMORY LIVE</strong>
             </div>
             <div id="djChatLog" class="dj-chat-log" aria-live="polite"></div>
             <form id="djChatForm" class="dj-chat-form">
@@ -270,9 +303,10 @@
     </div>
 
     <script src="/sim-audio.js"></script>
-    <script src="/spotify.js"></script>
-    <script src="/world-bands.js?v=20260510-ring4"></script>
-    <script src="/world-tours.js?v=20260510-ring4"></script>
-    <script src="/app.js?v=20260510-ring4"></script>
+    <script src="/spotify.js?v=20260723-studio7"></script>
+    <script src="/world-bands.js?v=20260723-mobile2"></script>
+    <script src="/world-tours.js?v=20260723-mobile2"></script>
+    <script type="module" src="/world-3d.mjs?v=20260723-studio7"></script>
+    <script src="/app.js?v=20260723-studio7"></script>
   </body>
 </html>

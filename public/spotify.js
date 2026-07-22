@@ -145,7 +145,7 @@
       this.config = config;
       await this.handleCallback();
       await this.getAccessToken().catch((error) => {
-        console.warn(error);
+        if (!/not authenticated/i.test(error.message || "")) console.warn(error);
         if (/token|auth/i.test(error.message)) this.clearToken();
         return null;
       });
@@ -221,6 +221,9 @@
     async login() {
       if (!this.configured()) {
         throw new Error("Missing SPOTIFY_CLIENT_ID");
+      }
+      if (!window.isSecureContext) {
+        throw new Error("Spotify login requires the RadioX HTTPS phone address");
       }
       const verifier = randomString(64);
       const state = randomString(20);

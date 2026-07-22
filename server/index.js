@@ -1,5 +1,7 @@
 const http = require("http");
+const https = require("https");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const vm = require("vm");
 const { URL } = require("url");
@@ -8,12 +10,20 @@ const ROOT = path.join(__dirname, "..");
 loadLocalEnv(path.join(ROOT, ".env"));
 
 const PUBLIC_DIR = path.join(ROOT, "public");
+const THREE_MODULE_FILE = path.join(ROOT, "node_modules", "three", "build", "three.module.js");
+const THREE_CORE_FILE = path.join(ROOT, "node_modules", "three", "build", "three.core.js");
 const DATA_DIR = path.join(ROOT, "data");
 const STATE_FILE = process.env.RADIOX_STATE_FILE
   ? path.resolve(process.env.RADIOX_STATE_FILE)
   : path.join(DATA_DIR, "state.json");
 const STATE_TEMPLATE_FILE = path.join(DATA_DIR, "state.example.json");
 const PORT = Number(process.env.PORT || 8765);
+const HOST = process.env.HOST || "0.0.0.0";
+const HTTPS_PORT = Number(process.env.HTTPS_PORT || 8766);
+const CERT_DIR = path.resolve(process.env.RADIOX_CERT_DIR || path.join(DATA_DIR, "certs"));
+const HTTPS_KEY_FILE = path.join(CERT_DIR, "server-key.pem");
+const HTTPS_CERT_FILE = path.join(CERT_DIR, "server-cert.pem");
+const LOCAL_CA_FILE = path.join(CERT_DIR, "radiox-ca.cer");
 const STATION_TIME_ZONE = process.env.RADIOX_TIME_ZONE || "Asia/Tokyo";
 const QUEUE_SIZE = 10;
 const RECENT_AVOID_COUNT = 18;
@@ -72,6 +82,7 @@ const MIME = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".webmanifest": "application/manifest+json; charset=utf-8",
   ".svg": "image/svg+xml; charset=utf-8",
@@ -2176,12 +2187,37 @@ function parseBody(req) {
   });
 }
 
+function requestOrigin(req) {
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+  const protocol = forwardedProto || (req.socket.encrypted ? "https" : "http");
+  const host = String(req.headers["x-forwarded-host"] || req.headers.host || `127.0.0.1:${PORT}`).split(",")[0].trim();
+  return `${protocol}://${host}`;
+}
+
+function spotifyRedirectUriForRequest(req) {
+  const origin = requestOrigin(req);
+  if (origin.startsWith("https://")) {
+    return process.env.SPOTIFY_HTTPS_REDIRECT_URI || `${origin}/callback`;
+  }
+  return process.env.SPOTIFY_REDIRECT_URI || `http://127.0.0.1:${PORT}/callback`;
+}
+
 async function handleApi(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/config") {
     const provider = activeTtsProvider();
+    const origin = requestOrigin(req);
+    const originUrl = new URL(origin);
+    const httpsAvailable = fs.existsSync(HTTPS_KEY_FILE) && fs.existsSync(HTTPS_CERT_FILE);
     sendJson(res, 200, {
       spotifyClientId: process.env.SPOTIFY_CLIENT_ID || "",
-      spotifyRedirectUri: process.env.SPOTIFY_REDIRECT_URI || `http://127.0.0.1:${PORT}/callback`,
+      spotifyRedirectUri: spotifyRedirectUriForRequest(req),
+      publicOrigin: origin,
+      secureContext: origin.startsWith("https://"),
+      httpsAvailable,
+      secureOrigin: httpsAvailable
+        ? `https://${originUrl.hostname}:${HTTPS_PORT}`
+        : "",
+      localCaUrl: fs.existsSync(LOCAL_CA_FILE) ? `${origin}/radiox-ca.cer` : "",
       openAiTtsConfigured: ttsConfigured(),
       ttsConfigured: ttsConfigured(),
       ttsProvider: provider,
@@ -2512,6 +2548,36 @@ async function handleApi(req, res, url) {
     return true;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/queue/reorder") {
+    const body = await parseBody(req);
+    const payload = stationPayload({ persistQueue: true });
+    const state = readJson("state.json");
+    const knownIds = new Set(payload.queue.map((track) => track.id));
+    const requested = [...new Set((Array.isArray(body.trackIds) ? body.trackIds : [])
+      .map((id) => String(id || "").trim())
+      .filter((id) => knownIds.has(id)))];
+    if (!requested.length) {
+      sendJson(res, 400, { error: "trackIds must contain Queue tracks" });
+      return true;
+    }
+    const nextOrder = [
+      ...requested,
+      ...payload.queue.map((track) => track.id).filter((id) => !requested.includes(id))
+    ].slice(0, QUEUE_SIZE);
+    const currentId = payload.current?.id;
+    const currentIndex = Math.max(0, nextOrder.indexOf(currentId));
+    writeJson("state.json", {
+      ...state,
+      currentIndex,
+      queueDate: localDateKey(),
+      queueSignature: payload.state.queueSignature,
+      queueOrder: nextOrder,
+      updatedAt: new Date().toISOString()
+    });
+    sendJson(res, 200, stationPayload({ persistQueue: true }));
+    return true;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/favorite") {
     const body = await parseBody(req);
     const payload = stationPayload({ persistQueue: true });
@@ -2565,15 +2631,31 @@ async function handleApi(req, res, url) {
 }
 
 function safeStaticPath(urlPathname) {
+  if (urlPathname === "/vendor/three.module.js") return THREE_MODULE_FILE;
+  if (urlPathname === "/vendor/three.core.js") return THREE_CORE_FILE;
   const cleanPath = decodeURIComponent(urlPathname === "/" ? "/index.html" : urlPathname);
   const filePath = path.normalize(path.join(PUBLIC_DIR, cleanPath));
   if (!filePath.startsWith(PUBLIC_DIR)) return null;
   return filePath;
 }
 
-const server = http.createServer(async (req, res) => {
+const requestHandler = async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {
+    if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/radiox-ca.cer" && fs.existsSync(LOCAL_CA_FILE)) {
+      const headers = {
+        "Content-Type": "application/x-x509-ca-cert",
+        "Content-Disposition": "attachment; filename=radiox-ca.cer",
+        "Cache-Control": "no-store"
+      };
+      if (req.method === "HEAD") {
+        res.writeHead(200, headers);
+        res.end();
+      } else {
+        send(res, 200, fs.readFileSync(LOCAL_CA_FILE), headers);
+      }
+      return;
+    }
     if (url.pathname.startsWith("/api/")) {
       const handled = await handleApi(req, res, url);
       if (!handled) sendJson(res, 404, { error: "Not found" });
@@ -2594,10 +2676,21 @@ const server = http.createServer(async (req, res) => {
   } catch (error) {
     sendJson(res, 500, { error: error.message });
   }
-});
+};
 
-server.listen(PORT, () => {
-  console.log(`RadioX Server listening on http://127.0.0.1:${PORT}`);
+const server = http.createServer(requestHandler);
+
+function lanAddresses() {
+  return Object.values(os.networkInterfaces())
+    .flat()
+    .filter((address) => address && !address.internal && (address.family === "IPv4" || address.family === 4))
+    .map((address) => address.address)
+    .filter((address, index, source) => source.indexOf(address) === index);
+}
+
+server.listen(PORT, HOST, () => {
+  console.log(`RadioX local: http://127.0.0.1:${PORT}`);
+  lanAddresses().forEach((address) => console.log(`RadioX phone: http://${address}:${PORT}`));
   console.log("connected to local taste / schedule / Spotify bridge");
   if (openWeatherConfigured()) {
     refreshOpenWeatherCache(true).then((weather) => {
@@ -2608,3 +2701,17 @@ server.listen(PORT, () => {
     }, Math.max(60_000, OPENWEATHER_CACHE_MS)).unref?.();
   }
 });
+
+if (fs.existsSync(HTTPS_KEY_FILE) && fs.existsSync(HTTPS_CERT_FILE)) {
+  const secureServer = https.createServer({
+    key: fs.readFileSync(HTTPS_KEY_FILE),
+    cert: fs.readFileSync(HTTPS_CERT_FILE)
+  }, requestHandler);
+  secureServer.listen(HTTPS_PORT, HOST, () => {
+    console.log(`RadioX secure local: https://127.0.0.1:${HTTPS_PORT}`);
+    lanAddresses().forEach((address) => console.log(`RadioX secure phone: https://${address}:${HTTPS_PORT}`));
+    if (fs.existsSync(LOCAL_CA_FILE)) {
+      lanAddresses().forEach((address) => console.log(`RadioX phone CA: http://${address}:${PORT}/radiox-ca.cer`));
+    }
+  });
+}
