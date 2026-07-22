@@ -1,4 +1,4 @@
-const CACHE_NAME = "radiox-v62";
+const CACHE_NAME = "radiox-20260510-ring4";
 const ASSETS = [
   "/",
   "/index.html",
@@ -6,6 +6,8 @@ const ASSETS = [
   "/sim-audio.js",
   "/app.js",
   "/spotify.js",
+  "/world-bands.js",
+  "/world-tours.js",
   "/manifest.webmanifest",
   "/icons/icon.svg"
 ];

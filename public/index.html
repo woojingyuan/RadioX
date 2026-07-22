@@ -7,7 +7,10 @@
     <title>RadioX</title>
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/icons/icon.svg">
-    <link rel="stylesheet" href="/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css?v=20260510-ring4">
   </head>
   <body>
     <main class="shell">
@@ -34,11 +37,70 @@
             <p class="eyebrow">PERSONAL AI DJ</p>
             <h1 id="heroLine">Monday Night Exhale</h1>
           </div>
+          <div class="pet-lion" role="img" aria-label="一只在玩绣球的小狮子">
+            <svg viewBox="0 0 260 190" aria-hidden="true">
+              <defs>
+                <radialGradient id="lionMane" cx="44%" cy="36%" r="67%">
+                  <stop offset="0%" stop-color="#f5c16e"/>
+                  <stop offset="58%" stop-color="#b66f38"/>
+                  <stop offset="100%" stop-color="#44281b"/>
+                </radialGradient>
+                <linearGradient id="lionFur" x1="38" y1="38" x2="165" y2="160" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#ffe1a2"/>
+                  <stop offset="62%" stop-color="#d9964c"/>
+                  <stop offset="100%" stop-color="#84512b"/>
+                </linearGradient>
+                <radialGradient id="embroideredBall" cx="38%" cy="28%" r="72%">
+                  <stop offset="0%" stop-color="#ffeec0"/>
+                  <stop offset="42%" stop-color="#e14e5c"/>
+                  <stop offset="100%" stop-color="#7a1932"/>
+                </radialGradient>
+              </defs>
+              <ellipse cx="126" cy="166" rx="92" ry="15" fill="rgba(0,0,0,0.26)"/>
+              <g class="pet-lion-body">
+                <path d="M68 79c-22 14-29 37-18 58 10 21 33 30 61 25 25-4 45-19 48-43 3-28-17-50-48-55-16-2-31 2-43 15Z" fill="url(#lionFur)"/>
+                <path d="M47 71c-14-8-25-3-28 9 13-1 21 4 27 12Z" fill="#9a5f38"/>
+                <path d="M41 83c-11 6-15 17-11 29 9-8 18-10 30-6Z" fill="#7a4529"/>
+                <path d="M137 67c11-14 23-14 33-5-12 6-18 14-20 27Z" fill="#9a5f38"/>
+                <path d="M151 78c13 1 23 9 25 21-12-4-21-2-30 7Z" fill="#7a4529"/>
+                <path d="M37 77c9-27 33-46 64-47 33-1 61 18 71 47 9 26-5 54-32 69-28 16-65 14-88-5-21-17-24-39-15-64Z" fill="url(#lionMane)"/>
+                <circle cx="101" cy="88" r="47" fill="url(#lionFur)"/>
+                <circle cx="70" cy="55" r="13" fill="#c8783d"/>
+                <circle cx="132" cy="55" r="13" fill="#c8783d"/>
+                <circle cx="71" cy="56" r="7" fill="#ffd893"/>
+                <circle cx="132" cy="56" r="7" fill="#ffd893"/>
+                <circle cx="84" cy="84" r="5" fill="#18110d"/>
+                <circle cx="118" cy="84" r="5" fill="#18110d"/>
+                <circle cx="86" cy="82" r="1.7" fill="#fff7e4"/>
+                <circle cx="120" cy="82" r="1.7" fill="#fff7e4"/>
+                <path d="M98 95c5-4 12-4 17 0-2 7-6 10-9 10s-7-3-8-10Z" fill="#51301f"/>
+                <path d="M106 104c-1 8-8 12-15 9M106 104c1 8 9 12 16 9" fill="none" stroke="#51301f" stroke-width="3" stroke-linecap="round"/>
+                <path class="pet-paw" d="M142 125c18 2 32 6 44 16" fill="none" stroke="#d9964c" stroke-width="18" stroke-linecap="round"/>
+                <circle cx="146" cy="137" r="12" fill="#c8783d"/>
+                <path d="M41 122c-18 7-28 19-27 34 9-9 20-12 36-11Z" fill="#d9964c"/>
+                <path d="M90 150c-4 10-2 18 4 22 9-5 12-12 9-24Z" fill="#c8783d"/>
+                <path d="M131 147c2 12 9 19 19 21 5-9 2-17-9-25Z" fill="#c8783d"/>
+                <path d="M58 136c-22 2-39-7-46-21" fill="none" stroke="#a06035" stroke-width="9" stroke-linecap="round"/>
+                <circle cx="10" cy="112" r="8" fill="#d9964c"/>
+              </g>
+              <g class="pet-ball">
+                <circle cx="190" cy="145" r="28" fill="url(#embroideredBall)" stroke="#f7d994" stroke-width="4"/>
+                <path d="M167 143c14-16 32-21 50-16M169 154c17 7 35 5 52-8M190 118c-8 17-8 35 2 54M179 122c13 13 24 29 31 47" fill="none" stroke="#f7d994" stroke-width="3" stroke-linecap="round"/>
+                <circle cx="181" cy="135" r="4" fill="#39f5b0"/>
+                <circle cx="202" cy="154" r="4" fill="#39f5b0"/>
+              </g>
+            </svg>
+          </div>
         </div>
 
         <section class="player-panel" aria-label="Current track">
           <div class="track-row">
-            <div>
+            <div class="album-art-shell">
+              <div class="album-art" id="albumArt" aria-label="Album cover">
+                <span>RX</span>
+              </div>
+            </div>
+            <div class="track-meta">
               <p class="label">NOW PLAYING</p>
               <h2 id="trackTitle">Loading...</h2>
               <p id="trackArtist">RadioX is tuning the room</p>
@@ -65,13 +127,35 @@
           </div>
         </section>
 
-        <section class="chat-panel" aria-label="DJ output">
-          <div class="panel-head">
-            <span class="live-dot"></span>
-            <span>RadioX</span>
-            <strong>LIVE</strong>
+        <section class="world-panel" id="worldPanel" aria-label="World bands globe">
+          <div class="world-head">
+            <div>
+              <p class="label">WORLD ALBUMS</p>
+            </div>
+            <div class="world-actions">
+              <div class="world-tabs" role="tablist" aria-label="World album layer">
+                <button class="world-tab active" type="button" data-world-filter="million" title="百万唱片销量专辑">百万销量专辑</button>
+                <button class="world-tab" type="button" data-world-filter="grammy" title="历届格莱美获奖专辑">格莱美获奖专辑</button>
+                <button class="world-tab" type="button" data-world-filter="taste">MY TASTE</button>
+              </div>
+              <button class="world-fullscreen-button" id="worldFullscreenButton" type="button">FULL</button>
+            </div>
           </div>
-          <div id="transcript" class="transcript"></div>
+          <div class="world-layout">
+            <div class="globe-stage">
+              <div class="globe-orb" id="worldGlobe">
+                <canvas id="worldCanvas" class="world-canvas" width="720" height="720" aria-hidden="true"></canvas>
+                <div id="worldTourLayer" class="world-tour-layer" aria-hidden="true"></div>
+                <div id="worldMarkers" class="world-markers"></div>
+              </div>
+              <div id="worldTourTooltip" class="world-tour-tooltip" hidden></div>
+              <div class="world-rank-strip" id="worldRankStrip"></div>
+            </div>
+            <article class="band-detail" id="bandDetail"></article>
+          </div>
+        </section>
+
+        <section class="chat-panel" aria-label="Conversation with RadioX">
           <section class="dj-chat" aria-label="Conversation with RadioX">
             <div class="dj-chat-head">
               <span>ASK THE DJ</span>
@@ -97,6 +181,7 @@
             <p><span></span>weather + schedule online</p>
             <p><span></span>spotify bridge optional</p>
           </div>
+          <div id="systemStatus" class="system-status" aria-live="polite"></div>
           <div id="contextReadout" class="readout"></div>
         </section>
 
@@ -186,6 +271,8 @@
 
     <script src="/sim-audio.js"></script>
     <script src="/spotify.js"></script>
-    <script src="/app.js"></script>
+    <script src="/world-bands.js?v=20260510-ring4"></script>
+    <script src="/world-tours.js?v=20260510-ring4"></script>
+    <script src="/app.js?v=20260510-ring4"></script>
   </body>
 </html>

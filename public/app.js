@@ -4,6 +4,7 @@ const els = {
   heroLine: document.querySelector("#heroLine"),
   trackTitle: document.querySelector("#trackTitle"),
   trackArtist: document.querySelector("#trackArtist"),
+  albumArt: document.querySelector("#albumArt"),
   playButton: document.querySelector("#playButton"),
   prevButton: document.querySelector("#prevButton"),
   nextButton: document.querySelector("#nextButton"),
@@ -20,7 +21,6 @@ const els = {
   elapsed: document.querySelector("#elapsed"),
   duration: document.querySelector("#duration"),
   volume: document.querySelector("#volume"),
-  transcript: document.querySelector("#transcript"),
   djChatLog: document.querySelector("#djChatLog"),
   djChatForm: document.querySelector("#djChatForm"),
   djChatInput: document.querySelector("#djChatInput"),
@@ -40,6 +40,17 @@ const els = {
   tasteSaveButton: document.querySelector("#tasteSaveButton"),
   tasteStatus: document.querySelector("#tasteStatus"),
   serverState: document.querySelector("#serverState"),
+  systemStatus: document.querySelector("#systemStatus"),
+  worldPanel: document.querySelector("#worldPanel"),
+  worldGlobe: document.querySelector("#worldGlobe"),
+  worldCanvas: document.querySelector("#worldCanvas"),
+  worldTourLayer: document.querySelector("#worldTourLayer"),
+  worldTourTooltip: document.querySelector("#worldTourTooltip"),
+  worldMarkers: document.querySelector("#worldMarkers"),
+  worldRankStrip: document.querySelector("#worldRankStrip"),
+  bandDetail: document.querySelector("#bandDetail"),
+  worldTabs: document.querySelector(".world-tabs"),
+  worldFullscreenButton: document.querySelector("#worldFullscreenButton"),
   spectrum: document.querySelector("#spectrum")
 };
 
@@ -59,13 +70,39 @@ const app = {
   voiceRunId: 0,
   djAudio: null,
   djAudioUrl: "",
-  lastSpokenKey: "",
   advancing: false,
   spotifyPlaySeq: 0,
   expectedSpotifyUri: "",
   spotifyMismatchTimer: null,
   spotifyPrefetchTimer: null,
   spotifyAutoAdvanceUri: "",
+  albumArtLookupKey: "",
+  albumArtLookupSeq: 0,
+  worldBandId: "",
+  worldHoverBandId: "",
+  worldAlbumKey: "",
+  worldFilter: "million",
+  worldCenterLon: 20,
+  worldCenterLat: 12,
+  worldZoom: 1,
+  worldAutoRotate: true,
+  worldVelocityLon: 0.018,
+  worldVelocityLat: 0,
+  worldDragging: false,
+  worldDragStart: null,
+  worldLastFrameAt: 0,
+  worldLastDrawAt: 0,
+  worldFullscreen: false,
+  worldCountries: [],
+  worldAtlasLoading: false,
+  worldAtlasSource: "fallback",
+  worldAlbumCovers: new Map(),
+  worldAlbumLookup: new Set(),
+  worldQueueingKey: "",
+  worldCatalog: null,
+  worldCatalogLoadedAt: 0,
+  serviceConfig: null,
+  systemIssues: {},
   audioFeaturesCache: new Map(),
   favoriteStatusCache: new Map(),
   favoriteSyncing: new Set(),
@@ -126,6 +163,17 @@ function stableVoiceHash(value) {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(36);
+}
+
+function clampValue(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function normalizeDegrees(value) {
+  let next = Number(value || 0);
+  while (next > 180) next -= 360;
+  while (next < -180) next += 360;
+  return next;
 }
 
 function api(path, options = {}) {
@@ -272,7 +320,77 @@ function spotifyTrackMatchesCurrent(spotifyTrack, current) {
   const spotifyTitle = normalizeMatchText(spotifyTrack.name);
   const artist = normalizeMatchText(String(current.artist || "").split(/\s+(?:&|and|和)\s+|,/i)[0]);
   const spotifyArtists = normalizeMatchText((spotifyTrack.artists || []).map((item) => item.name).join(" "));
-  return Boolean(title && artist && (spotifyTitle.includes(title) || title.includes(spotifyTitle)) && spotifyArtists.includes(artist));
+  const artistIsPlaceholder = /^(spotify request|radiox request|listener request|unknown)$/i.test(String(current.artist || "").trim());
+  const artistMatches = artistIsPlaceholder || !artist || spotifyArtists.includes(artist);
+  return Boolean(title && (spotifyTitle.includes(title) || title.includes(spotifyTitle)) && artistMatches);
+}
+
+function spotifyAlbumCoverUrl(spotifyTrack) {
+  const images = Array.isArray(spotifyTrack?.album?.images) ? spotifyTrack.album.images : [];
+  return [...images]
+    .filter((image) => image?.url)
+    .sort((a, b) => Number(b.width || 0) - Number(a.width || 0))[0]?.url || "";
+}
+
+function fallbackAlbumInitials(track) {
+  const title = String(track?.title || "").trim();
+  if (!title) return "RX";
+  const parts = title.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2 && /^[\x00-\x7F]+$/.test(title)) {
+    return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase() || "RX";
+  }
+  return [...title].slice(0, 2).join("").toUpperCase() || "RX";
+}
+
+function albumArtKey(track) {
+  if (!track) return "";
+  return String(track.id || `${track.title || ""}|${track.artist || ""}`);
+}
+
+function renderAlbumArt(track, spotifyTrack = app.spotifyTrack) {
+  if (!els.albumArt) return;
+  const coverUrl = spotifyTrackMatchesCurrent(spotifyTrack, track) ? spotifyAlbumCoverUrl(spotifyTrack) : "";
+  els.albumArt.classList.toggle("has-cover", Boolean(coverUrl));
+
+  if (coverUrl) {
+    const existing = els.albumArt.querySelector("img");
+    if (existing?.src === coverUrl) {
+      existing.alt = `${track?.title || "Current track"} album cover`;
+      return;
+    }
+    const image = document.createElement("img");
+    image.src = coverUrl;
+    image.alt = `${track?.title || "Current track"} album cover`;
+    image.decoding = "async";
+    image.loading = "lazy";
+    els.albumArt.replaceChildren(image);
+    return;
+  }
+
+  const fallback = document.createElement("span");
+  fallback.textContent = fallbackAlbumInitials(track);
+  els.albumArt.replaceChildren(fallback);
+}
+
+function loadAlbumArtForTrack(track) {
+  renderAlbumArt(track);
+  if (!track || !app.spotify?.status().authenticated || typeof app.spotify.resolveTrack !== "function") return;
+  if (spotifyTrackMatchesCurrent(app.spotifyTrack, track) && spotifyAlbumCoverUrl(app.spotifyTrack)) return;
+
+  const key = albumArtKey(track);
+  if (!key || app.albumArtLookupKey === key) return;
+  const lookupSeq = ++app.albumArtLookupSeq;
+  app.albumArtLookupKey = key;
+  app.spotify.resolveTrack(track)
+    .then((spotifyTrack) => {
+      if (!spotifyTrack || lookupSeq !== app.albumArtLookupSeq || albumArtKey(app.payload?.current) !== key) return;
+      app.spotifyTrack = spotifyTrack;
+      renderAlbumArt(track, spotifyTrack);
+    })
+    .catch((error) => {
+      if (app.albumArtLookupKey === key) app.albumArtLookupKey = "";
+      console.warn("Album art lookup skipped", error);
+    });
 }
 
 function resetSpotifyPlaybackTracking() {
@@ -298,33 +416,6 @@ function splitVoiceParts(text) {
         .filter(Boolean);
     })
     .slice(0, 5);
-}
-
-function voicePartsFromPayload(payload) {
-  const lines = payload?.transcript || [];
-  const spokenLines = lines.filter((line) => !/你今天的关键词是/.test(line.text || ""));
-  return spokenLines
-    .slice(0, 4)
-    .flatMap((line) => splitVoiceParts(line.text))
-    .slice(0, 8);
-}
-
-function voiceTextFromPayload(payload) {
-  const lines = payload?.transcript || [];
-  return lines
-    .filter((line) => !/你今天的关键词是/.test(line.text || ""))
-    .slice(0, 3)
-    .map((line) => naturalizeDjText(line.text))
-    .filter(Boolean)
-    .join("\n\n");
-}
-
-function voiceKeyFromPayload(payload) {
-  const current = payload?.current?.id || "radiox";
-  const index = payload?.state?.currentIndex ?? 0;
-  const dateKey = payload?.context?.now?.dateKey || "";
-  const plan = payload?.context?.planText || "";
-  return `${dateKey}:${index}:${current}:${plan}`;
 }
 
 function restoreVoiceDucking() {
@@ -389,6 +480,7 @@ async function playCloudTextVoice(text, key, runId) {
     const blob = await response.blob();
     if (runId !== app.voiceRunId) return true;
 
+    setSystemIssue("TTS", "");
     app.djAudioUrl = URL.createObjectURL(blob);
     app.djAudio = new Audio(app.djAudioUrl);
     app.voiceRestore = duckPlaybackForVoice();
@@ -411,14 +503,10 @@ async function playCloudTextVoice(text, key, runId) {
     return true;
   } catch (error) {
     console.warn("Cloud TTS voice fallback", error);
+    setSystemIssue("TTS", error.message || "cloud voice fallback");
     setServerState("BROWSER VOICE");
     return false;
   }
-}
-
-async function playCloudDjVoice(payload, runId) {
-  const text = voiceTextFromPayload(payload);
-  return playCloudTextVoice(text, voiceKeyFromPayload(payload), runId);
 }
 
 function speakBrowserText(parts, runId) {
@@ -454,25 +542,6 @@ function speakBrowserText(parts, runId) {
   speakPart(0);
 }
 
-function speakBrowserDjIntro(parts, runId) {
-  speakBrowserText(parts, runId);
-}
-
-async function speakDjIntro(payload, options = {}) {
-  if (!app.voiceEnabled || !djVoiceSupported()) return;
-  const parts = voicePartsFromPayload(payload);
-  if (!parts.length) return;
-
-  const key = voiceKeyFromPayload(payload);
-  if (!options.force && app.lastSpokenKey === key) return;
-  app.lastSpokenKey = key;
-
-  stopDjVoice();
-  const runId = app.voiceRunId;
-  const ttsStarted = await playCloudDjVoice(payload, runId);
-  if (!ttsStarted && runId === app.voiceRunId) speakBrowserDjIntro(parts, runId);
-}
-
 async function speakDjChatReply(message) {
   const text = naturalizeDjText(message?.text || "");
   if (!app.voiceEnabled || !djVoiceSupported() || !text) return;
@@ -505,6 +574,7 @@ async function syncFavoriteToSpotify(track, favorite = true) {
       ? await app.spotify.saveTrackToLibrary(track)
       : await app.spotify.removeTrackFromLibrary(track);
     app.spotifyTrack = spotifyTrack;
+    renderAlbumArt(track, spotifyTrack);
     app.favoriteStatusCache.set(track.id, {
       saved: favorite,
       checkedAt: Date.now()
@@ -629,9 +699,23 @@ function weatherReadout(context) {
 }
 
 function render(payload) {
-  app.payload = payload;
-  const { current, context, profile, queue, transcript, state, aiDj } = payload;
-  syncFavoritesFromServer(payload);
+  const safePayload = payload || {};
+  const current = safePayload.current || null;
+  const context = {
+    weather: "open",
+    mood: "focus",
+    intensity: 0,
+    scheduleTags: [],
+    now: {},
+    ...(safePayload.context || {})
+  };
+  context.now = { weekday: "Today", dayPart: "today", ...(context.now || {}) };
+  context.scheduleTags = Array.isArray(context.scheduleTags) ? context.scheduleTags : [];
+  const profile = safePayload.profile || {};
+  const queue = Array.isArray(safePayload.queue) ? safePayload.queue : [];
+  const state = { volume: Number(els.volume?.value || 70), djChat: [], ...(safePayload.state || {}) };
+  app.payload = { ...safePayload, current, context, profile, queue, state };
+  syncFavoritesFromServer(app.payload);
   els.heroLine.textContent = heroFromContext(context);
   const hasCurrent = Boolean(current);
   els.playButton.disabled = !hasCurrent;
@@ -642,24 +726,14 @@ function render(payload) {
   if (!hasCurrent) {
     els.trackTitle.textContent = "正在整理下一批歌";
     els.trackArtist.textContent = "RadioX 会继续向后推进，优先避开最近听过的曲目";
+    app.albumArtLookupKey = "";
+    renderAlbumArt(null);
     els.duration.textContent = "0:00";
     els.elapsed.textContent = "0:00";
     els.progress.value = "0";
     els.playButton.textContent = "▶";
     els.favButton.textContent = "♡";
     updateVoiceButton();
-    const djSource = aiDj?.source === "openai" ? "OPENAI" : "LOCAL";
-    els.transcript.innerHTML = `
-      <div class="dj-output-box">
-        <div class="dj-output-toolbar">
-          <span>DJ OUTPUT</span>
-          <strong>${escapeHtml(djSource)}</strong>
-        </div>
-        <div class="dj-output-copy">
-          <p>我在重新整理下一批歌。优先避开最近听过的曲目，继续往前推。</p>
-        </div>
-      </div>
-    `;
     renderDjChat(state.djChat || []);
     els.contextReadout.innerHTML = `
       <div>weather: <strong>${escapeHtml(weatherReadout(context))}</strong></div>
@@ -679,29 +753,19 @@ function render(payload) {
     `).join("");
     renderTasteTags(profile);
     scheduleSpotifyPrefetch();
-    handleRemoteFavoriteRequest(payload);
+    handleRemoteFavoriteRequest(app.payload);
+    renderSystemStatus();
     return;
   }
   els.trackTitle.textContent = current.title;
-  els.trackArtist.textContent = `${current.artist} — ${current.genres.join(" / ")}`;
+  const currentGenres = Array.isArray(current.genres) ? current.genres : [];
+  els.trackArtist.textContent = `${current.artist} — ${currentGenres.join(" / ") || "RadioX"}`;
+  loadAlbumArtForTrack(current);
   els.duration.textContent = formatTime(current.duration);
   els.playButton.textContent = app.playing ? "Ⅱ" : "▶";
   els.volume.value = state.volume;
   updateCurrentFavoriteButton();
   updateVoiceButton();
-
-  const djSource = aiDj?.source === "openai" ? "OPENAI" : "LOCAL";
-  els.transcript.innerHTML = `
-    <div class="dj-output-box">
-      <div class="dj-output-toolbar">
-        <span>DJ OUTPUT</span>
-        <strong>${escapeHtml(djSource)}</strong>
-      </div>
-      <div class="dj-output-copy">
-        ${transcript.map((line) => `<p>${escapeHtml(line.text)}</p>`).join("")}
-      </div>
-    </div>
-  `;
   renderDjChat(state.djChat || []);
 
   els.contextReadout.innerHTML = `
@@ -724,7 +788,8 @@ function render(payload) {
 
   renderTasteTags(profile);
   scheduleSpotifyPrefetch();
-  handleRemoteFavoriteRequest(payload);
+  handleRemoteFavoriteRequest(app.payload);
+  renderSystemStatus();
 }
 
 function escapeHtml(value) {
@@ -735,6 +800,1878 @@ function escapeHtml(value) {
     "\"": "&quot;",
     "'": "&#39;"
   }[char]));
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value).replace(/`/g, "&#96;");
+}
+
+function setSystemIssue(scope, message) {
+  if (!scope) return;
+  if (message) app.systemIssues[scope] = String(message);
+  else delete app.systemIssues[scope];
+  renderSystemStatus();
+}
+
+function serviceTone(value) {
+  if (/connected|ready|openweather|ok|future|loaded|inworld|openai|cloud|album mode/i.test(value)) return "ok";
+  if (/login|fallback|manual|pending|browser|loading|waiting|setup/i.test(value)) return "warn";
+  return "bad";
+}
+
+function statusBadge(label, value, tone = serviceTone(value)) {
+  return `
+    <span class="system-badge ${escapeAttr(tone)}">
+      <i></i>
+      <b>${escapeHtml(label)}</b>
+      <em>${escapeHtml(value)}</em>
+    </span>
+  `;
+}
+
+function spotifyStatusLabel() {
+  if (!app.spotifyConfig?.spotifyClientId) return "setup";
+  const status = app.spotify?.status?.();
+  if (status?.connected) return "connected";
+  if (status?.authenticated) return "ready";
+  return "login";
+}
+
+function weatherStatusLabel() {
+  const source = app.payload?.context?.weatherSource || "";
+  if (source === "openweather") return "OpenWeather";
+  if (app.spotifyConfig?.openWeather?.configured) return source || "waiting";
+  return "fallback";
+}
+
+function worldStatusLabel() {
+  const stats = app.worldCatalog?.stats;
+  if (!stats) return "loading";
+  if (Number(stats.futureTourStops || 0) > 0) return `${stats.futureTourStops} future stops`;
+  return "album mode";
+}
+
+function renderSystemStatus() {
+  if (!els.systemStatus) return;
+  const provider = app.spotifyConfig?.ttsConfigured
+    ? (app.spotifyConfig.ttsProvider || "cloud")
+    : "browser";
+  const pending = Number(app.worldCatalog?.stats?.pending || 0);
+  const issueEntries = Object.entries(app.systemIssues || {}).filter(([, value]) => value);
+  els.systemStatus.innerHTML = `
+    <div class="system-badges">
+      ${statusBadge("Spotify", spotifyStatusLabel())}
+      ${statusBadge("TTS", provider)}
+      ${statusBadge("Weather", weatherStatusLabel())}
+      ${statusBadge("World", worldStatusLabel())}
+      ${pending ? statusBadge("Review", `${pending} pending`, "warn") : ""}
+    </div>
+    ${issueEntries.length ? `
+      <div class="system-issues">
+        ${issueEntries.slice(0, 4).map(([scope, message]) => `
+          <p><b>${escapeHtml(scope)}</b><span>${escapeHtml(message)}</span></p>
+        `).join("")}
+      </div>
+    ` : ""}
+  `;
+}
+
+function albumFromReviewItem(item) {
+  if (!item?.album?.title) return null;
+  return {
+    title: item.album.title,
+    year: item.album.year || "",
+    million: item.album.category === "million" || Boolean(item.album.salesM),
+    grammy: item.album.grammyYear ? { year: item.album.grammyYear, award: "Grammy" } : null,
+    lead: item.album.lead || item.album.title,
+    tracks: item.album.tracks || [item.album.title],
+    image: item.album.image || ""
+  };
+}
+
+function mergeWorldReviewCatalog(catalog) {
+  const approved = Array.isArray(catalog?.approved?.reviewItems) ? catalog.approved.reviewItems : [];
+  if (!approved.length) return;
+  window.RADIOX_WORLD_BANDS = Array.isArray(window.RADIOX_WORLD_BANDS) ? window.RADIOX_WORLD_BANDS : [];
+  window.RADIOX_WORLD_TOURS = window.RADIOX_WORLD_TOURS && typeof window.RADIOX_WORLD_TOURS === "object"
+    ? window.RADIOX_WORLD_TOURS
+    : {};
+  approved.forEach((item) => {
+    const artist = item.artist || item.band || {};
+    const id = artist.id || item.id;
+    if (!id || !artist.name) return;
+    let band = window.RADIOX_WORLD_BANDS.find((entry) => entry.id === id);
+    if (!band) {
+      band = {
+        id,
+        name: artist.name,
+        country: artist.country || "Reviewed",
+        city: artist.city || "",
+        lat: artist.lat,
+        lon: artist.lon,
+        genres: ["reviewed"],
+        claimedSalesM: item.album?.salesM || null,
+        taste: true,
+        albums: []
+      };
+      window.RADIOX_WORLD_BANDS.push(band);
+    }
+    const album = albumFromReviewItem(item);
+    if (album && !band.albums.some((entry) => entry.title === album.title)) band.albums.push(album);
+    if (item.tour?.dates?.length) {
+      window.RADIOX_WORLD_TOURS[id] = {
+        name: item.tour.name || `${artist.name} upcoming tour`,
+        sourceLabel: item.source?.label || item.tour.source?.label || "Reviewed source",
+        sourceUrl: item.source?.url || item.tour.source?.url || "",
+        stops: item.tour.dates
+      };
+    }
+  });
+}
+
+async function loadWorldCatalogFromApi() {
+  try {
+    const catalog = await api("/api/world/catalog");
+    app.worldCatalog = catalog;
+    app.worldCatalogLoadedAt = Date.now();
+    mergeWorldReviewCatalog(catalog);
+    setSystemIssue("World", "");
+    return catalog;
+  } catch (error) {
+    console.warn("World catalog API failed", error);
+    setSystemIssue("World", error.message || "catalog unavailable");
+    return null;
+  }
+}
+
+async function refreshWeatherStatus() {
+  try {
+    const status = await api("/api/weather");
+    setSystemIssue("Weather", status.lastError || "");
+    renderSystemStatus();
+    return status;
+  } catch (error) {
+    console.warn("Weather status failed", error);
+    setSystemIssue("Weather", error.message || "weather unavailable");
+    return null;
+  }
+}
+
+const WORLD_GLOBE_RADIUS_RATIO = 0.47;
+const WORLD_GLOBE_MARKER_RADIUS = WORLD_GLOBE_RADIUS_RATIO * 100;
+const WORLD_COUNTRY_PALETTE = [
+  [42, 58, 45],
+  [97, 42, 42],
+  [150, 45, 38],
+  [185, 46, 40],
+  [213, 48, 44],
+  [258, 34, 48],
+  [304, 36, 45],
+  [12, 50, 47],
+  [330, 38, 47],
+  [72, 50, 42],
+  [26, 46, 43],
+  [168, 43, 38]
+];
+
+const WORLD_LANDMASSES = [
+  {
+    name: "North America",
+    kind: "continent",
+    points: [[-168, 71], [-152, 72], [-140, 69], [-132, 61], [-125, 55], [-124, 49], [-118, 34], [-111, 27], [-103, 22], [-95, 18], [-86, 20], [-81, 25], [-80, 31], [-75, 36], [-69, 43], [-62, 48], [-54, 55], [-58, 63], [-72, 68], [-91, 72], [-116, 74], [-142, 73]]
+  },
+  {
+    name: "Canadian Arctic",
+    kind: "ice",
+    points: [[-132, 76], [-110, 78], [-88, 76], [-78, 72], [-93, 69], [-121, 70], [-140, 73]]
+  },
+  {
+    name: "Central America",
+    kind: "continent",
+    points: [[-111, 23], [-101, 21], [-93, 18], [-88, 17], [-83, 11], [-78, 9], [-77, 7], [-84, 8], [-90, 14], [-99, 16], [-107, 20]]
+  },
+  {
+    name: "South America",
+    kind: "continent",
+    points: [[-81, 12], [-74, 11], [-67, 8], [-60, 6], [-52, 1], [-44, -4], [-35, -8], [-38, -16], [-43, -23], [-48, -31], [-54, -40], [-63, -53], [-70, -55], [-73, -49], [-75, -39], [-72, -28], [-77, -17], [-80, -5]]
+  },
+  {
+    name: "Greenland",
+    kind: "ice",
+    points: [[-73, 77], [-61, 82], [-42, 83], [-23, 78], [-19, 69], [-31, 61], [-47, 60], [-61, 66], [-72, 72]]
+  },
+  {
+    name: "Europe Mainland",
+    kind: "continent",
+    points: [[-10, 36], [-4, 43], [3, 47], [8, 45], [13, 42], [19, 45], [26, 45], [31, 41], [39, 43], [42, 50], [34, 56], [25, 59], [18, 55], [12, 54], [7, 58], [-1, 56], [-6, 51], [-9, 44]]
+  },
+  {
+    name: "Scandinavia",
+    kind: "continent",
+    points: [[5, 58], [9, 64], [14, 69], [24, 71], [31, 66], [27, 60], [20, 56], [12, 56]]
+  },
+  {
+    name: "Africa",
+    kind: "continent",
+    points: [[-18, 36], [-6, 35], [9, 37], [24, 32], [32, 31], [34, 24], [43, 13], [51, 11], [48, 0], [43, -12], [36, -24], [31, -32], [20, -35], [12, -30], [5, -20], [-5, -11], [-14, 4], [-17, 18]]
+  },
+  {
+    name: "Madagascar",
+    kind: "continent",
+    points: [[47, -12], [50, -18], [49, -25], [45, -26], [43, -20]]
+  },
+  {
+    name: "Asia Mainland",
+    kind: "continent",
+    points: [[31, 70], [55, 72], [82, 72], [111, 70], [138, 64], [160, 57], [170, 51], [158, 43], [145, 39], [137, 34], [125, 31], [116, 22], [106, 20], [101, 7], [92, 13], [88, 22], [80, 8], [72, 18], [59, 24], [48, 28], [40, 38], [34, 49], [28, 58]]
+  },
+  {
+    name: "Arabia",
+    kind: "continent",
+    points: [[35, 30], [45, 31], [56, 25], [59, 18], [52, 13], [44, 14], [38, 21]]
+  },
+  {
+    name: "India",
+    kind: "continent",
+    points: [[68, 29], [78, 30], [88, 25], [89, 20], [82, 13], [77, 7], [72, 12], [68, 22]]
+  },
+  {
+    name: "Southeast Asia",
+    kind: "continent",
+    points: [[95, 22], [105, 18], [108, 9], [104, 1], [99, 7], [97, 15]]
+  },
+  {
+    name: "Indonesia",
+    kind: "continent",
+    points: [[96, 5], [113, 2], [128, 0], [141, -5], [133, -8], [116, -6], [101, -3]]
+  },
+  {
+    name: "Japan Archipelago",
+    kind: "continent",
+    points: [[130, 45], [137, 43], [142, 39], [146, 35], [141, 32], [135, 34], [130, 39]]
+  },
+  {
+    name: "Australia",
+    kind: "continent",
+    points: [[113, -12], [124, -14], [135, -12], [146, -18], [153, -27], [147, -38], [133, -39], [122, -34], [113, -25]]
+  },
+  {
+    name: "New Zealand",
+    kind: "continent",
+    points: [[166, -34], [179, -39], [174, -47], [166, -44]]
+  },
+  {
+    name: "United States",
+    kind: "country",
+    label: "US",
+    labelAt: [-98, 39],
+    points: [[-125, 49], [-117, 49], [-104, 49], [-95, 48], [-83, 46], [-70, 45], [-67, 41], [-74, 39], [-80, 32], [-81, 25], [-89, 30], [-97, 26], [-106, 31], [-117, 33], [-124, 41]]
+  },
+  {
+    name: "Canada",
+    kind: "country",
+    label: "CA",
+    labelAt: [-104, 58],
+    points: [[-140, 70], [-116, 70], [-95, 68], [-75, 64], [-60, 55], [-67, 48], [-84, 47], [-101, 49], [-124, 49], [-132, 55]]
+  },
+  {
+    name: "Mexico",
+    kind: "country",
+    label: "MX",
+    labelAt: [-102, 23],
+    points: [[-117, 32], [-107, 31], [-97, 26], [-89, 21], [-95, 16], [-105, 20], [-112, 24]]
+  },
+  {
+    name: "Brazil",
+    kind: "country",
+    label: "BR",
+    labelAt: [-53, -10],
+    points: [[-74, 5], [-58, 6], [-44, -3], [-35, -8], [-40, -20], [-48, -31], [-58, -33], [-67, -20], [-70, -8]]
+  },
+  {
+    name: "United Kingdom",
+    kind: "country",
+    label: "UK",
+    labelAt: [-3, 55],
+    points: [[-8, 58], [-5, 60], [0, 57], [1, 53], [-2, 50], [-6, 51], [-8, 54]]
+  },
+  {
+    name: "Ireland",
+    kind: "country",
+    label: "IE",
+    labelAt: [-8, 53],
+    points: [[-10, 55], [-7, 56], [-6, 53], [-8, 51], [-10, 52]]
+  },
+  {
+    name: "Sweden",
+    kind: "country",
+    label: "SE",
+    labelAt: [16, 62],
+    points: [[11, 69], [20, 69], [24, 64], [19, 56], [13, 56], [10, 62]]
+  },
+  {
+    name: "China",
+    kind: "country",
+    label: "CN",
+    labelAt: [104, 35],
+    points: [[74, 49], [90, 48], [101, 45], [116, 42], [123, 36], [121, 25], [106, 21], [96, 24], [82, 29], [73, 39]]
+  },
+  {
+    name: "Japan",
+    kind: "country",
+    label: "JP",
+    labelAt: [138, 38],
+    points: [[130, 45], [138, 43], [145, 36], [141, 32], [133, 34], [129, 39]]
+  },
+  {
+    name: "Hong Kong",
+    kind: "country",
+    label: "HK",
+    labelAt: [114, 22],
+    points: [[113, 23], [115, 23], [115, 21], [113, 21]]
+  },
+  {
+    name: "Australia",
+    kind: "country",
+    label: "AU",
+    labelAt: [134, -25],
+    points: [[113, -12], [124, -14], [135, -12], [146, -18], [153, -27], [147, -38], [133, -39], [122, -34], [113, -25]]
+  }
+];
+
+const WORLD_COUNTRY_LABELS = [
+  { name: "Canada", lon: -106, lat: 57, priority: 1 },
+  { name: "United States", lon: -98, lat: 39, priority: 1 },
+  { name: "Mexico", lon: -102, lat: 23, priority: 2 },
+  { name: "Brazil", lon: -53, lat: -10, priority: 1 },
+  { name: "Argentina", lon: -64, lat: -34, priority: 2 },
+  { name: "Chile", lon: -71, lat: -30, priority: 3 },
+  { name: "Peru", lon: -75, lat: -9, priority: 3 },
+  { name: "Colombia", lon: -74, lat: 5, priority: 3 },
+  { name: "Venezuela", lon: -66, lat: 7, priority: 4 },
+  { name: "Cuba", lon: -79, lat: 21, priority: 4 },
+  { name: "Greenland", lon: -42, lat: 72, priority: 3 },
+  { name: "Iceland", lon: -19, lat: 65, priority: 4 },
+  { name: "Ireland", lon: -8, lat: 53, priority: 2 },
+  { name: "United Kingdom", lon: -3, lat: 55, priority: 1 },
+  { name: "Norway", lon: 9, lat: 62, priority: 3 },
+  { name: "Sweden", lon: 16, lat: 62, priority: 2 },
+  { name: "Finland", lon: 26, lat: 64, priority: 3 },
+  { name: "Denmark", lon: 10, lat: 56, priority: 4 },
+  { name: "France", lon: 2, lat: 46, priority: 2 },
+  { name: "Spain", lon: -4, lat: 40, priority: 2 },
+  { name: "Portugal", lon: -8, lat: 39, priority: 4 },
+  { name: "Germany", lon: 10, lat: 51, priority: 2 },
+  { name: "Netherlands", lon: 5, lat: 52, priority: 4 },
+  { name: "Belgium", lon: 4, lat: 50.5, priority: 4 },
+  { name: "Italy", lon: 12, lat: 43, priority: 2 },
+  { name: "Poland", lon: 19, lat: 52, priority: 3 },
+  { name: "Ukraine", lon: 31, lat: 49, priority: 3 },
+  { name: "Turkey", lon: 35, lat: 39, priority: 2 },
+  { name: "Russia", lon: 90, lat: 60, priority: 1 },
+  { name: "Morocco", lon: -7, lat: 31, priority: 4 },
+  { name: "Algeria", lon: 2, lat: 28, priority: 3 },
+  { name: "Egypt", lon: 30, lat: 27, priority: 2 },
+  { name: "Nigeria", lon: 8, lat: 9, priority: 3 },
+  { name: "Ghana", lon: -1, lat: 7, priority: 4 },
+  { name: "Ethiopia", lon: 40, lat: 9, priority: 3 },
+  { name: "Kenya", lon: 38, lat: 0, priority: 3 },
+  { name: "Tanzania", lon: 35, lat: -6, priority: 4 },
+  { name: "South Africa", lon: 24, lat: -29, priority: 2 },
+  { name: "Madagascar", lon: 47, lat: -20, priority: 4 },
+  { name: "Saudi Arabia", lon: 45, lat: 24, priority: 2 },
+  { name: "Iran", lon: 53, lat: 32, priority: 2 },
+  { name: "Iraq", lon: 44, lat: 33, priority: 4 },
+  { name: "Israel", lon: 35, lat: 31, priority: 4 },
+  { name: "Pakistan", lon: 69, lat: 30, priority: 3 },
+  { name: "India", lon: 78, lat: 22, priority: 1 },
+  { name: "Bangladesh", lon: 90, lat: 24, priority: 4 },
+  { name: "Sri Lanka", lon: 81, lat: 7, priority: 4 },
+  { name: "Kazakhstan", lon: 67, lat: 48, priority: 3 },
+  { name: "Mongolia", lon: 103, lat: 47, priority: 3 },
+  { name: "China", lon: 104, lat: 35, priority: 1 },
+  { name: "Hong Kong", lon: 114, lat: 22, priority: 3 },
+  { name: "Taiwan", lon: 121, lat: 24, priority: 4 },
+  { name: "Japan", lon: 138, lat: 38, priority: 1 },
+  { name: "South Korea", lon: 127, lat: 36, priority: 3 },
+  { name: "North Korea", lon: 127, lat: 40, priority: 4 },
+  { name: "Thailand", lon: 101, lat: 15, priority: 3 },
+  { name: "Vietnam", lon: 108, lat: 16, priority: 3 },
+  { name: "Philippines", lon: 122, lat: 12, priority: 3 },
+  { name: "Malaysia", lon: 102, lat: 4, priority: 4 },
+  { name: "Singapore", lon: 104, lat: 1, priority: 4 },
+  { name: "Indonesia", lon: 118, lat: -2, priority: 2 },
+  { name: "Australia", lon: 134, lat: -25, priority: 1 },
+  { name: "New Zealand", lon: 172, lat: -42, priority: 3 }
+];
+
+const WORLD_COUNTRY_BORDER_LINES = [
+  [[-125, 49], [-96, 49], [-67, 46]],
+  [[-117, 32], [-107, 31], [-97, 26]],
+  [[-76, -18], [-70, -29], [-70, -52]],
+  [[-67, -20], [-58, -31], [-54, -34]],
+  [[-58, 6], [-63, -4], [-67, -15]],
+  [[-8, 36], [-3, 43], [3, 43]],
+  [[2, 43], [7, 48], [8, 51]],
+  [[8, 47], [13, 47], [15, 46]],
+  [[14, 55], [18, 54], [24, 55]],
+  [[19, 52], [24, 49], [31, 49]],
+  [[26, 45], [31, 46], [38, 45]],
+  [[34, 36], [38, 39], [43, 41]],
+  [[-9, 31], [2, 31], [12, 32], [24, 31]],
+  [[24, 31], [25, 22], [30, 22]],
+  [[9, 13], [14, 13], [16, 5], [14, -3]],
+  [[30, 4], [36, 4], [42, 5]],
+  [[25, -22], [31, -22], [33, -30]],
+  [[35, 30], [42, 31], [48, 28]],
+  [[45, 31], [51, 31], [58, 28]],
+  [[61, 25], [70, 30], [78, 30]],
+  [[69, 24], [75, 31], [78, 35]],
+  [[78, 30], [88, 28], [95, 27]],
+  [[74, 49], [89, 49], [101, 45], [119, 43]],
+  [[88, 49], [96, 42], [106, 42]],
+  [[100, 23], [106, 20], [109, 12]],
+  [[108, 22], [114, 22], [121, 24]],
+  [[127, 34], [129, 38], [128, 42]],
+  [[96, 5], [107, 2], [119, 0], [131, -4]],
+  [[113, -25], [124, -30], [134, -25], [146, -30]]
+];
+
+const WORLD_ATLAS_URLS = [
+  "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json",
+  "https://unpkg.com/world-atlas@2/countries-50m.json"
+];
+
+const WORLD_FILTER_STORAGE_KEY = "radiox.worldFilter";
+const WORLD_FILTERS = new Set(["million", "grammy", "taste"]);
+const WORLD_TOUR_FUTURE_DAYS = 730;
+const WORLD_GRAMMY_ALBUMS = new Map([
+  ["the-beatles:Sgt. Pepper's Lonely Hearts Club Band", { year: 1968, award: "Album of the Year" }],
+  ["u2:The Joshua Tree", { year: 1988, award: "Album of the Year" }],
+  ["adele:21", { year: 2012, award: "Album of the Year" }],
+  ["adele:25", { year: 2017, award: "Album of the Year" }],
+  ["fleetwood-mac:Rumours", { year: 1978, award: "Album of the Year" }],
+  ["michael-jackson:Thriller", { year: 1984, award: "Album of the Year" }],
+  ["bob-dylan:Time Out Of Mind", { year: 1998, award: "Album of the Year" }],
+  ["bruce-springsteen:The Rising", { year: 2003, award: "Best Rock Album" }],
+  ["green-day:American Idiot", { year: 2005, award: "Best Rock Album" }],
+  ["green-day:21st Century Breakdown", { year: 2010, award: "Best Rock Album" }],
+  ["green-day:Dookie", { year: 1995, award: "Best Alternative Music Performance" }],
+  ["foo-fighters:Wasting Light", { year: 2012, award: "Best Rock Album" }],
+  ["foo-fighters:Echoes, Silence, Patience & Grace", { year: 2008, award: "Best Rock Album" }],
+  ["foo-fighters:Medicine At Midnight", { year: 2022, award: "Best Rock Album" }],
+  ["red-hot-chili-peppers:Stadium Arcadium", { year: 2007, award: "Best Rock Album" }],
+  ["radiohead:OK Computer", { year: 1998, award: "Best Alternative Music Performance" }],
+  ["radiohead:Kid A", { year: 2001, award: "Best Alternative Music Album" }],
+  ["radiohead:In Rainbows", { year: 2009, award: "Best Alternative Music Album" }],
+  ["the-white-stripes:Elephant", { year: 2004, award: "Best Alternative Music Album" }],
+  ["the-white-stripes:Get Behind Me Satan", { year: 2006, award: "Best Alternative Music Album" }],
+  ["the-white-stripes:Icky Thump", { year: 2008, award: "Best Alternative Music Album" }],
+  ["coldplay:Viva La Vida Or Death And All His Friends", { year: 2009, award: "Best Rock Album" }],
+  ["santana:Supernatural", { year: 2000, award: "Album of the Year" }],
+  ["daft-punk:Random Access Memories", { year: 2014, award: "Album of the Year" }],
+  ["norah-jones:Come Away With Me", { year: 2003, award: "Album of the Year" }],
+  ["bb-king:Riding With The King", { year: 2001, award: "Best Traditional Blues Album" }],
+  ["bb-king:Blues On The Bayou", { year: 2000, award: "Best Traditional Blues Album" }],
+  ["herbie-hancock:River: The Joni Letters", { year: 2008, award: "Album of the Year" }],
+  ["yo-yo-ma:Obrigado Brazil", { year: 2004, award: "Best Classical Crossover Album" }]
+]);
+
+function normalizeWorldFilter(value) {
+  if (value === "sales" || value === "all") return "million";
+  return WORLD_FILTERS.has(value) ? value : "million";
+}
+
+function worldBands() {
+  return Array.isArray(window.RADIOX_WORLD_BANDS)
+    ? [...window.RADIOX_WORLD_BANDS]
+      .sort((a, b) => Number(b.claimedSalesM || 0) - Number(a.claimedSalesM || 0) || a.name.localeCompare(b.name))
+      .map((band, index) => ({ ...band, salesRank: band.claimedSalesM ? index + 1 : null }))
+    : [];
+}
+
+function worldAlbumKey(band, album) {
+  return `${band?.id || ""}:${album?.title || ""}`;
+}
+
+function albumGrammyMeta(band, album) {
+  return album?.grammy || WORLD_GRAMMY_ALBUMS.get(worldAlbumKey(band, album)) || null;
+}
+
+function tasteProfileForWorld() {
+  return app.payload?.profile || {};
+}
+
+function normalizedTasteWords(values) {
+  return (values || [])
+    .flatMap((value) => String(value || "").toLowerCase().split(/[^a-z0-9\u3040-\u30ff\u3400-\u9fff]+/))
+    .filter(Boolean);
+}
+
+function albumTasteMatch(band, album, profile = tasteProfileForWorld()) {
+  const anchors = (profile.tasteAnchors || []).map((value) => String(value || "").toLowerCase());
+  const genres = band.genres || [];
+  const genreWeights = profile.genreWeights || {};
+  const currentLean = new Set((profile.currentLean || []).map(String));
+  const currentDayPart = app.payload?.context?.now?.dayPart || "day";
+  const timeGenres = new Set((profile.timePreferences?.[currentDayPart]?.genres || []).map(String));
+  const albumWords = normalizedTasteWords([album.title, album.lead, ...(album.tracks || [])]);
+  const bandName = String(band.name || "").toLowerCase();
+  const anchorMatch = anchors.some((anchor) => anchor && (bandName.includes(anchor) || anchor.includes(bandName)));
+  const genreScore = genres.reduce((sum, genre) => sum + Number(genreWeights[genre] || 0), 0);
+  const weightedGenreScore = genres.length ? Math.min(30, Math.round(genreScore / genres.length * 1.25)) : 0;
+  const leanHits = genres.filter((genre) => currentLean.has(genre)).length;
+  const timeHits = genres.filter((genre) => timeGenres.has(genre)).length;
+  const classicWords = ["blues", "jazz", "bach", "cello", "river", "dark", "time", "wish", "blue", "故乡", "安和桥"];
+  const albumWordHit = albumWords.some((word) => classicWords.includes(word));
+
+  let score = 38;
+  const reasons = [];
+  if (anchorMatch) {
+    score += 28;
+    reasons.push("artist anchor");
+  }
+  if (band.taste) {
+    score += 10;
+    if (!anchorMatch) reasons.push("taste layer");
+  }
+  if (weightedGenreScore) {
+    score += weightedGenreScore;
+    reasons.push("genre weight");
+  }
+  if (leanHits) {
+    score += Math.min(12, leanHits * 6);
+    reasons.push("current lean");
+  }
+  if (timeHits) {
+    score += Math.min(10, timeHits * 5);
+    reasons.push("time preference");
+  }
+  if (albumWordHit) {
+    score += 4;
+    reasons.push("album mood");
+  }
+  if (albumGrammyMeta(band, album)) score += 2;
+  if (band.claimedSalesM) score += Math.min(5, Math.round(Number(band.claimedSalesM) / 80));
+
+  return {
+    score: clampValue(score, 36, 99),
+    reason: reasons.slice(0, 2).join(" + ") || "taste distance"
+  };
+}
+
+function bandBestTasteMatch(band) {
+  const entries = worldAlbumsForBand(band);
+  if (!entries.length) return { score: 0, reason: "" };
+  return entries
+    .map(({ album }) => albumTasteMatch(band, album))
+    .sort((a, b) => b.score - a.score)[0];
+}
+
+function worldAlbumFilterLabel() {
+  if (app.worldFilter === "grammy") return "GRAMMY";
+  if (app.worldFilter === "taste") return "TASTE";
+  return "MILLION";
+}
+
+function worldAlbumNote(band, album) {
+  const grammy = albumGrammyMeta(band, album);
+  if (app.worldFilter === "grammy" && grammy) return `${grammy.year} Grammy · ${grammy.award}`;
+  if (app.worldFilter === "taste") return "Taste Map";
+  return band.claimedSalesM ? "Million-selling album" : "Album layer";
+}
+
+function albumMatchesWorldFilter(band, album) {
+  if (!album) return false;
+  if (app.worldFilter === "grammy") return Boolean(albumGrammyMeta(band, album));
+  if (app.worldFilter === "taste") return Boolean(band.taste);
+  return Boolean(band.claimedSalesM || album.million);
+}
+
+function worldAlbumsForBand(band) {
+  return (band?.albums || [])
+    .map((album, albumIndex) => ({ album, albumIndex, note: worldAlbumNote(band, album) }))
+    .filter((entry) => albumMatchesWorldFilter(band, entry.album));
+}
+
+function filteredWorldBands() {
+  const bands = worldBands();
+  return bands.filter((band) => worldAlbumsForBand(band).length);
+}
+
+function worldAlbumEntries() {
+  const entries = filteredWorldBands().flatMap((band) => (
+    worldAlbumsForBand(band).map((entry) => ({ ...entry, band }))
+  ));
+  if (app.worldFilter === "grammy") {
+    return entries.sort((a, b) => {
+      const yearA = Number(albumGrammyMeta(a.band, a.album)?.year || 9999);
+      const yearB = Number(albumGrammyMeta(b.band, b.album)?.year || 9999);
+      return yearA - yearB || a.band.name.localeCompare(b.band.name);
+    });
+  }
+  return entries;
+}
+
+function selectedWorldBand() {
+  const bands = filteredWorldBands();
+  return bands.find((band) => band.id === app.worldBandId) || bands[0] || null;
+}
+
+function worldBandById(id) {
+  if (!id) return null;
+  return filteredWorldBands().find((band) => band.id === id) || null;
+}
+
+function activeWorldBand() {
+  return worldBandById(app.worldHoverBandId) || selectedWorldBand();
+}
+
+function focusedWorldBandId() {
+  return app.worldHoverBandId || app.worldBandId || "";
+}
+
+function worldRankEntriesForBand(band) {
+  if (!band) return worldAlbumEntries();
+  const albums = worldAlbumsForBand(band);
+  return albums.length
+    ? albums.map((entry) => ({ ...entry, band }))
+    : worldAlbumEntries();
+}
+
+function worldTourDataForBand(band) {
+  if (!band) return null;
+  const catalog = window.RADIOX_WORLD_TOURS || {};
+  return catalog[band.id] || band.tour || null;
+}
+
+function parseTourDate(value) {
+  const date = new Date(`${value || ""}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function addDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function tourWindowBounds() {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const end = addDays(now, WORLD_TOUR_FUTURE_DAYS);
+  end.setHours(23, 59, 59, 999);
+  return {
+    start: now,
+    end
+  };
+}
+
+function stopInTourWindow(stop) {
+  const startDate = parseTourDate(stop?.date);
+  const endDate = parseTourDate(stop?.endDate || stop?.date);
+  if (!startDate || !endDate) return false;
+  const bounds = tourWindowBounds();
+  return endDate >= bounds.start && startDate <= bounds.end;
+}
+
+function tourStopsForBand(band) {
+  const data = worldTourDataForBand(band);
+  return (data?.stops || [])
+    .filter(stopInTourWindow)
+    .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+}
+
+function shortTourDate(value) {
+  const date = parseTourDate(value);
+  if (!date) return "";
+  const year = String(date.getFullYear()).slice(2);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}.${month}.${day}`;
+}
+
+function tourStopDateLabel(stop) {
+  const start = shortTourDate(stop?.date);
+  const end = stop?.endDate ? shortTourDate(stop.endDate) : "";
+  if (start && end && start !== end) return `${start}-${end}`;
+  return start || "date tbc";
+}
+
+function tourStopCityLabel(stop) {
+  return [stop?.city, stop?.region, stop?.country].filter(Boolean).join(", ");
+}
+
+function tourStopTitle(stop) {
+  return [
+    tourStopDateLabel(stop),
+    tourStopCityLabel(stop),
+    stop?.venue
+  ].filter(Boolean).join(" · ");
+}
+
+function tourTooltipStopsForBand(band) {
+  return tourStopsForBand(band).slice(0, 5);
+}
+
+function hideWorldTourTooltip() {
+  if (!els.worldTourTooltip) return;
+  els.worldTourTooltip.hidden = true;
+  els.worldTourTooltip.innerHTML = "";
+}
+
+function positionWorldTourTooltip(event) {
+  if (!els.worldTourTooltip || !els.worldGlobe) return;
+  const stage = els.worldGlobe.parentElement || els.worldGlobe;
+  const rect = stage.getBoundingClientRect();
+  const tooltip = els.worldTourTooltip;
+  const margin = 10;
+  const width = tooltip.offsetWidth || 260;
+  const height = tooltip.offsetHeight || 140;
+  const pointerX = event ? event.clientX - rect.left : rect.width * 0.5;
+  const pointerY = event ? event.clientY - rect.top : rect.height * 0.45;
+  let x = pointerX + 16;
+  let y = pointerY - height * 0.5;
+  if (x + width + margin > rect.width) x = pointerX - width - 16;
+  x = clampValue(x, margin, Math.max(margin, rect.width - width - margin));
+  y = clampValue(y, margin, Math.max(margin, rect.height - height - margin));
+  tooltip.style.left = `${x}px`;
+  tooltip.style.top = `${y}px`;
+}
+
+function showWorldTourTooltip(band, event) {
+  if (!els.worldTourTooltip || !band) return hideWorldTourTooltip();
+  const stops = tourTooltipStopsForBand(band);
+  if (!stops.length) return hideWorldTourTooltip();
+  const data = worldTourDataForBand(band);
+  const source = data?.sourceLabel ? `<small class="tour-tooltip-source">${escapeHtml(data.sourceLabel)}</small>` : "";
+  els.worldTourTooltip.innerHTML = `
+    <strong>${escapeHtml(band.name)}</strong>
+    <small>${escapeHtml(data?.name || "Upcoming tour")} · ${stops.length}${tourStopsForBand(band).length > stops.length ? "+" : ""} future stops</small>
+    <div>
+      ${stops.map((stop) => `
+        <p>
+          <time>${escapeHtml(tourStopDateLabel(stop))}</time>
+          <span>${escapeHtml(tourStopCityLabel(stop))}</span>
+          <em>${escapeHtml([stop.venue, stop.source?.label].filter(Boolean).join(" · "))}</em>
+        </p>
+      `).join("")}
+    </div>
+    ${source}
+  `;
+  els.worldTourTooltip.hidden = false;
+  positionWorldTourTooltip(event);
+}
+
+function tourStatusHeading(data, stops = []) {
+  if (data?.stops?.length && !stops.length) return "No tour inside current window";
+  if (!data) return "Tour data not added yet";
+  if (data.status === "inactive") return "Historical / inactive artist";
+  if (data.status === "retired") return "Retired from touring";
+  if (data.status === "no-recent") return "No recent tour found";
+  if (data.status === "data-missing") return "Tour data not added yet";
+  return "No verified recent tour";
+}
+
+function tourStatusCopy(band, data, stops = []) {
+  if (data?.stops?.length && !stops.length) {
+    return `${band.name} 有巡演记录，但不在当前“近两年/已公布下一段”的显示窗口里。`;
+  }
+  if (data?.status === "inactive") {
+    return `${band.name} 目前属于历史/非活跃巡演状态，地图不会把旧巡演当成近两年巡演显示。`;
+  }
+  if (data?.status === "retired") {
+    return `${band.name} 已结束或取消巡演计划，地图保留这个状态，避免误以为只是没有查到。`;
+  }
+  if (data?.status === "no-recent") {
+    return `${band.name} 近两年或已公布下一段没有可核验的巡演城市。`;
+  }
+  return `${band.name} 的巡演数据还没有补进本地地图；补充后会在这里显示日期、城市和路线。`;
+}
+
+function tourProjection(stop) {
+  const point = projectWorldPoint(stop.lon, stop.lat, WORLD_GLOBE_MARKER_RADIUS * app.worldZoom, 50);
+  const inFrame = point.x > -8 && point.x < 108 && point.y > -8 && point.y < 108;
+  return {
+    ...point,
+    visible: point.visible && inFrame,
+    scale: 0.72 + Math.max(0, point.depth) * 0.3,
+    z: Math.round(point.depth * 80)
+  };
+}
+
+function decodeTopoArcs(topology) {
+  const scale = topology?.transform?.scale || [1, 1];
+  const translate = topology?.transform?.translate || [0, 0];
+  return (topology?.arcs || []).map((arc) => {
+    let x = 0;
+    let y = 0;
+    return arc.map((point) => {
+      x += Number(point[0] || 0);
+      y += Number(point[1] || 0);
+      return [
+        x * scale[0] + translate[0],
+        y * scale[1] + translate[1]
+      ];
+    });
+  });
+}
+
+function topoArcPoints(decodedArcs, arcIndex) {
+  const index = arcIndex < 0 ? ~arcIndex : arcIndex;
+  const points = decodedArcs[index] || [];
+  return arcIndex < 0 ? [...points].reverse() : points;
+}
+
+function topoRingPoints(decodedArcs, ring) {
+  const points = [];
+  (ring || []).forEach((arcIndex, index) => {
+    const arc = topoArcPoints(decodedArcs, arcIndex);
+    points.push(...(index ? arc.slice(1) : arc));
+  });
+  return points;
+}
+
+function topoGeometryRings(decodedArcs, geometry) {
+  if (geometry?.type === "Polygon") {
+    return (geometry.arcs || []).map((ring) => topoRingPoints(decodedArcs, ring));
+  }
+  if (geometry?.type === "MultiPolygon") {
+    return (geometry.arcs || []).flatMap((polygon) => (polygon || []).map((ring) => topoRingPoints(decodedArcs, ring)));
+  }
+  return [];
+}
+
+function topoCountries(topology) {
+  const decodedArcs = decodeTopoArcs(topology);
+  const geometries = topology?.objects?.countries?.geometries || [];
+  return geometries.map((geometry) => ({
+    id: String(geometry.id || ""),
+    name: geometry.properties?.name || geometry.properties?.NAME || "",
+    rings: topoGeometryRings(decodedArcs, geometry).filter((ring) => ring.length >= 3)
+  })).filter((country) => country.rings.length);
+}
+
+async function loadWorldAtlas() {
+  if (app.worldAtlasLoading || app.worldCountries.length) return;
+  app.worldAtlasLoading = true;
+  for (const url of WORLD_ATLAS_URLS) {
+    try {
+      const response = await fetch(url, { cache: "force-cache" });
+      if (!response.ok) throw new Error(`${response.status}`);
+      const topology = await response.json();
+      const countries = topoCountries(topology);
+      if (!countries.length) throw new Error("No countries in topology");
+      app.worldCountries = countries;
+      app.worldAtlasSource = url;
+      app.worldAtlasLoading = false;
+      refreshWorldGlobe();
+      return;
+    } catch (error) {
+      console.warn("World atlas load skipped", url, error);
+    }
+  }
+  app.worldAtlasSource = "fallback";
+  app.worldAtlasLoading = false;
+}
+
+function projectWorldPoint(lonDeg, latDeg, radius = 50, center = 50) {
+  const lat = Number(latDeg || 0) * Math.PI / 180;
+  const lon = (Number(lonDeg || 0) - app.worldCenterLon) * Math.PI / 180;
+  const centerLat = app.worldCenterLat * Math.PI / 180;
+  const cosLat = Math.cos(lat);
+  const sinLat = Math.sin(lat);
+  const cosCenter = Math.cos(centerLat);
+  const sinCenter = Math.sin(centerLat);
+  const cosc = sinCenter * sinLat + cosCenter * cosLat * Math.cos(lon);
+  const x = center + radius * cosLat * Math.sin(lon);
+  const y = center - radius * (cosCenter * sinLat - sinCenter * cosLat * Math.cos(lon));
+  const depth = (cosc + 1) / 2;
+  return {
+    x,
+    y,
+    cosc,
+    visible: cosc > -0.03,
+    depth: Math.max(0.05, Math.min(1, depth))
+  };
+}
+
+function worldProjection(band) {
+  const point = projectWorldPoint(band.lon, band.lat, WORLD_GLOBE_MARKER_RADIUS * app.worldZoom, 50);
+  const visibleDepth = point.visible ? point.depth : 0.05;
+  const inFrame = point.x > -8 && point.x < 108 && point.y > -8 && point.y < 108;
+  return {
+    ...point,
+    visible: point.visible && inFrame,
+    scale: 0.72 + Math.max(0, visibleDepth) * 0.42 + Math.min(0.5, Number(band.claimedSalesM || 0) / 900),
+    z: Math.round(visibleDepth * 80)
+  };
+}
+
+function worldRingLabelLimit() {
+  if (app.worldFullscreen) return 18;
+  if (app.worldFilter === "taste") return 12;
+  return 10;
+}
+
+function worldRingLabelPriority(band) {
+  const match = bandBestTasteMatch(band).score;
+  const salesRank = Number(band.salesRank || 999);
+  const salesScore = band.salesRank ? Math.max(0, 120 - salesRank * 2) : 0;
+  const grammyScore = worldAlbumsForBand(band).some(({ album }) => albumGrammyMeta(band, album)) ? 80 : 0;
+  const tasteScore = band.taste ? 90 : 0;
+  if (band.id === app.worldBandId) return 10000;
+  if (band.id === app.worldHoverBandId) return 9000;
+  if (app.worldFilter === "grammy") return grammyScore + match;
+  if (app.worldFilter === "taste") return tasteScore + match;
+  return salesScore + match;
+}
+
+function worldRingLabelBands(bands, pointMap) {
+  const limit = worldRingLabelLimit();
+  const visible = (bands || [])
+    .map((band) => ({ band, point: pointMap.get(band.id) || worldProjection(band) }))
+    .sort((a, b) => (
+      worldRingLabelPriority(b.band) - worldRingLabelPriority(a.band)
+      || a.band.name.localeCompare(b.band.name)
+    ))
+    .slice(0, limit)
+    .map((entry) => entry.band);
+
+  [app.worldBandId, app.worldHoverBandId].filter(Boolean).forEach((id) => {
+    const band = (bands || []).find((item) => item.id === id);
+    if (band && !visible.some((item) => item.id === band.id)) visible.unshift(band);
+  });
+
+  return [...new Map(visible.map((band) => [band.id, band])).values()].slice(0, limit);
+}
+
+function worldRingSlotMap(bands, pointMap) {
+  return new Map(worldRingLabelBands(bands, pointMap).map((band, index, source) => [
+    band.id,
+    { index, count: source.length }
+  ]));
+}
+
+function worldRingLabelProjection(point, band, slot = null) {
+  const dx = Number(point?.x || 50) - 50;
+  const dy = Number(point?.y || 50) - 50;
+  const distance = Math.hypot(dx, dy);
+  const fallbackAngle = ((((Number(band?.salesRank || 1) * 137.5) % 360) - 90) * Math.PI) / 180;
+  const slotCount = Math.max(1, Number(slot?.count || 0));
+  const angle = slot && slot.count > 1
+    ? (-Math.PI / 2) + (Math.PI / slotCount) + ((slot.index / slotCount) * Math.PI * 2)
+    : distance > 4 ? Math.atan2(dy, dx) : fallbackAngle;
+  const radius = app.worldFullscreen ? 46.2 : 43.6;
+  const x = clampValue(50 + Math.cos(angle) * radius, 8, 92);
+  const y = clampValue(50 + Math.sin(angle) * radius, 8, 92);
+  return {
+    x,
+    y,
+    anchor: x < 26 ? "left" : x > 74 ? "right" : "center"
+  };
+}
+
+function shouldShowWorldRingLabel(band, slotMap) {
+  return Boolean(band?.id && slotMap.has(band.id));
+}
+
+function worldBandPointMap(bands) {
+  const items = (bands || []).map((band) => ({
+    band,
+    point: worldProjection(band)
+  }));
+  const clusters = [];
+  const spreadTrigger = app.worldFullscreen ? 4.2 : 4.8;
+
+  items
+    .filter((item) => item.point.visible)
+    .forEach((item) => {
+      const cluster = clusters.find((candidate) => (
+        Math.hypot(item.point.x - candidate.x, item.point.y - candidate.y) <= spreadTrigger
+      ));
+      if (cluster) {
+        cluster.items.push(item);
+        cluster.x = cluster.items.reduce((sum, next) => sum + next.point.x, 0) / cluster.items.length;
+        cluster.y = cluster.items.reduce((sum, next) => sum + next.point.y, 0) / cluster.items.length;
+      } else {
+        clusters.push({ x: item.point.x, y: item.point.y, items: [item] });
+      }
+    });
+
+  clusters.forEach((cluster) => {
+    if (cluster.items.length <= 1) return;
+    const sorted = cluster.items.sort((a, b) => (
+      Number(b.band.claimedSalesM || 0) - Number(a.band.claimedSalesM || 0)
+      || a.band.name.localeCompare(b.band.name)
+    ));
+    const maxSpread = app.worldFullscreen ? 7.8 : 6.2;
+    const baseSpread = app.worldFullscreen ? 2.45 : 2.15;
+    const spreadStep = app.worldFullscreen ? 1.12 : 0.92;
+    const angleStep = Math.PI * (3 - Math.sqrt(5));
+    sorted.forEach((item, index) => {
+      const angle = -Math.PI / 2 + index * angleStep;
+      const spread = clampValue(baseSpread + Math.sqrt(index) * spreadStep, 2.3, maxSpread);
+      item.point = {
+        ...item.point,
+        x: clampValue(cluster.x + Math.cos(angle) * spread, -6, 106),
+        y: clampValue(cluster.y + Math.sin(angle) * spread, -6, 106),
+        z: item.point.z + index,
+        clusterSize: sorted.length,
+        clusterIndex: index
+      };
+    });
+  });
+
+  return new Map(items.map((item) => [item.band.id, item.point]));
+}
+
+function resizeWorldCanvas() {
+  const canvas = els.worldCanvas;
+  if (!canvas) return null;
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const width = Math.max(1, Math.round(rect.width * dpr));
+  const height = Math.max(1, Math.round(rect.height * dpr));
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+  return { canvas, width, height, dpr };
+}
+
+function projectCanvasPoint(lon, lat, cx, cy, radius) {
+  const point = projectWorldPoint(lon, lat, radius, 0);
+  return {
+    x: cx + point.x,
+    y: cy + point.y,
+    visible: point.visible,
+    cosc: point.cosc,
+    depth: point.depth
+  };
+}
+
+function drawProjectedPolyline(ctx, points, cx, cy, radius, closePath = false) {
+  let drawing = false;
+  let drew = false;
+  points.forEach(([lon, lat]) => {
+    const projected = projectCanvasPoint(lon, lat, cx, cy, radius);
+    if (!projected.visible) {
+      drawing = false;
+      return;
+    }
+    if (!drawing) {
+      ctx.moveTo(projected.x, projected.y);
+      drawing = true;
+    } else {
+      ctx.lineTo(projected.x, projected.y);
+    }
+    drew = true;
+  });
+  if (closePath && drew && drawing) ctx.closePath();
+  return drew;
+}
+
+function drawWorldGraticule(ctx, cx, cy, radius) {
+  ctx.save();
+  ctx.lineWidth = Math.max(0.7, radius / 260);
+  ctx.strokeStyle = "rgba(247,244,232,0.14)";
+  for (let lon = -180; lon <= 180; lon += 30) {
+    const line = [];
+    for (let lat = -80; lat <= 80; lat += 4) line.push([lon, lat]);
+    ctx.beginPath();
+    if (drawProjectedPolyline(ctx, line, cx, cy, radius)) ctx.stroke();
+  }
+  for (let lat = -60; lat <= 60; lat += 20) {
+    const line = [];
+    for (let lon = -180; lon <= 180; lon += 4) line.push([lon, lat]);
+    ctx.beginPath();
+    if (drawProjectedPolyline(ctx, line, cx, cy, radius)) ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function atlasCountryFill(country) {
+  if (/antarctica/i.test(country.name)) return "rgba(226,242,241,0.5)";
+  const seed = parseInt(stableVoiceHash(country.name).slice(0, 6), 36) || 0;
+  const [hue, saturation, lightness] = WORLD_COUNTRY_PALETTE[seed % WORLD_COUNTRY_PALETTE.length];
+  const shiftedHue = (hue + Math.floor(seed / WORLD_COUNTRY_PALETTE.length) % 10 - 5 + 360) % 360;
+  const shiftedLightness = clampValue(lightness + (seed % 7) - 3, 35, 54);
+  return `hsla(${shiftedHue}, ${saturation}%, ${shiftedLightness}%, 0.86)`;
+}
+
+function drawWorldAtlasCountries(ctx, cx, cy, radius) {
+  if (!app.worldCountries.length) return false;
+  ctx.save();
+  app.worldCountries.forEach((country) => {
+    country.rings.forEach((ring) => {
+      ctx.beginPath();
+      const drew = drawProjectedPolyline(ctx, ring, cx, cy, radius, true);
+      if (!drew) return;
+      ctx.fillStyle = atlasCountryFill(country);
+      ctx.fill();
+      ctx.lineWidth = Math.max(0.55, radius / 420);
+      ctx.strokeStyle = "rgba(247,244,232,0.3)";
+      ctx.stroke();
+    });
+  });
+  ctx.restore();
+  return true;
+}
+
+function drawWorldCountryBorderLines(ctx, cx, cy, radius) {
+  ctx.save();
+  ctx.globalAlpha = 0.36;
+  ctx.strokeStyle = "rgba(247,244,232,0.28)";
+  ctx.lineWidth = Math.max(0.65, radius / 360);
+  WORLD_COUNTRY_BORDER_LINES.forEach((line) => {
+    ctx.beginPath();
+    if (drawProjectedPolyline(ctx, line, cx, cy, radius)) ctx.stroke();
+  });
+  ctx.restore();
+}
+
+function countryLabelVisible(label) {
+  if (label.priority <= 1) return label.depth > 0.22;
+  if (label.priority === 2) return label.depth > 0.34;
+  if (label.priority === 3) return label.depth > 0.46;
+  return label.depth > 0.58;
+}
+
+function boxesOverlap(a, b, padding = 3) {
+  return !(
+    a.x + a.width + padding < b.x
+    || b.x + b.width + padding < a.x
+    || a.y + a.height + padding < b.y
+    || b.y + b.height + padding < a.y
+  );
+}
+
+function drawWorldCountryLabels(ctx, cx, cy, radius) {
+  const fontFamily = getComputedStyle(document.documentElement).getPropertyValue("--font-mono") || "monospace";
+  const maxLabels = Math.round(clampValue(radius / 5.2, 24, 58));
+  const occupied = [];
+  const labels = WORLD_COUNTRY_LABELS
+    .map((item) => {
+      const projected = projectCanvasPoint(item.lon, item.lat, cx, cy, radius);
+      return { ...item, ...projected };
+    })
+    .filter((item) => item.visible && countryLabelVisible(item))
+    .sort((a, b) => (a.priority - b.priority) || (b.depth - a.depth));
+
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  let drawn = 0;
+  labels.forEach((label) => {
+    if (drawn >= maxLabels) return;
+    const fontSize = Math.max(
+      label.priority <= 1 ? 9 : 7,
+      radius / (label.priority <= 1 ? 29 : label.priority === 2 ? 33 : 38)
+    );
+    ctx.font = `${label.priority <= 2 ? 700 : 400} ${fontSize}px ${fontFamily}`;
+    const width = ctx.measureText(label.name).width + 8;
+    const height = fontSize + 5;
+    const box = {
+      x: label.x - width / 2,
+      y: label.y - height / 2,
+      width,
+      height
+    };
+    if (occupied.some((item) => boxesOverlap(item, box, label.priority <= 1 ? 1 : 5))) return;
+    occupied.push(box);
+    drawn += 1;
+
+    const alpha = Math.min(0.88, Math.max(0.25, label.depth));
+    if (label.priority <= 2) {
+      ctx.globalAlpha = alpha * 0.42;
+      ctx.fillStyle = "rgba(0,0,0,0.62)";
+      ctx.fillRect(box.x, box.y, box.width, box.height);
+    }
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = label.priority <= 2 ? 3 : 2;
+    ctx.strokeStyle = "rgba(0,0,0,0.76)";
+    ctx.strokeText(label.name, label.x, label.y);
+    ctx.fillStyle = label.priority <= 2 ? "rgba(247,244,232,0.9)" : "rgba(247,244,232,0.68)";
+    ctx.fillText(label.name, label.x, label.y);
+  });
+  ctx.restore();
+}
+
+function drawWorldLand(ctx, cx, cy, radius) {
+  const atlasDrawn = drawWorldAtlasCountries(ctx, cx, cy, radius);
+  if (atlasDrawn) {
+    drawWorldCountryLabels(ctx, cx, cy, radius);
+    return;
+  }
+
+  WORLD_LANDMASSES.filter((shape) => shape.kind !== "country").forEach((shape) => {
+    ctx.beginPath();
+    const drew = drawProjectedPolyline(ctx, shape.points, cx, cy, radius, true);
+    if (!drew) return;
+    const gradient = ctx.createLinearGradient(cx - radius, cy - radius, cx + radius, cy + radius);
+    gradient.addColorStop(0, shape.kind === "ice" ? "rgba(235,246,244,0.86)" : "rgba(126,202,108,0.94)");
+    gradient.addColorStop(0.48, shape.kind === "ice" ? "rgba(174,218,217,0.76)" : "rgba(54,132,77,0.92)");
+    gradient.addColorStop(1, shape.kind === "ice" ? "rgba(74,119,136,0.68)" : "rgba(190,117,65,0.9)");
+    ctx.fillStyle = gradient;
+    ctx.fill();
+    ctx.lineWidth = Math.max(1.1, radius / 190);
+    ctx.strokeStyle = "rgba(247,244,232,0.38)";
+    ctx.stroke();
+  });
+
+  WORLD_LANDMASSES.filter((shape) => shape.kind === "country").forEach((shape) => {
+    ctx.beginPath();
+    const drew = drawProjectedPolyline(ctx, shape.points, cx, cy, radius, true);
+    if (!drew) return;
+    ctx.fillStyle = atlasCountryFill(shape);
+    ctx.globalAlpha = 0.64;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = Math.max(0.75, radius / 310);
+    ctx.strokeStyle = "rgba(247,244,232,0.34)";
+    ctx.stroke();
+  });
+
+  drawWorldCountryBorderLines(ctx, cx, cy, radius);
+  drawWorldCountryLabels(ctx, cx, cy, radius);
+
+  ctx.save();
+  ctx.globalAlpha = 0.46;
+  ctx.strokeStyle = "rgba(57,245,176,0.22)";
+  ctx.lineWidth = Math.max(0.8, radius / 340);
+  [
+    [[-170, 66], [-128, 60], [-100, 55], [-64, 48]],
+    [[-82, 9], [-72, -9], [-65, -25], [-70, -52]],
+    [[-10, 35], [24, 32], [43, 13], [32, -31]],
+    [[34, 49], [73, 39], [106, 21], [145, 36]],
+    [[113, -25], [133, -39], [153, -27]]
+  ].forEach((line) => {
+    ctx.beginPath();
+    if (drawProjectedPolyline(ctx, line, cx, cy, radius)) ctx.stroke();
+  });
+  ctx.restore();
+}
+
+function drawWorldTourRoute(ctx, cx, cy, radius) {
+  const band = activeWorldBand();
+  const stops = tourStopsForBand(band);
+  if (stops.length < 2) return;
+
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "rgba(0,0,0,0.58)";
+  ctx.lineWidth = Math.max(4, radius / 88);
+  for (let index = 1; index < stops.length; index += 1) {
+    const previous = stops[index - 1];
+    const current = stops[index];
+    const a = projectCanvasPoint(previous.lon, previous.lat, cx, cy, radius);
+    const b = projectCanvasPoint(current.lon, current.lat, cx, cy, radius);
+    if (!a.visible || !b.visible) continue;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = "rgba(225,151,112,0.88)";
+  ctx.lineWidth = Math.max(1.4, radius / 250);
+  ctx.setLineDash([Math.max(4, radius / 70), Math.max(5, radius / 58)]);
+  for (let index = 1; index < stops.length; index += 1) {
+    const previous = stops[index - 1];
+    const current = stops[index];
+    const a = projectCanvasPoint(previous.lon, previous.lat, cx, cy, radius);
+    const b = projectCanvasPoint(current.lon, current.lat, cx, cy, radius);
+    if (!a.visible || !b.visible) continue;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawWorldGlobe() {
+  const info = resizeWorldCanvas();
+  if (!info) return;
+  const { canvas, width, height } = info;
+  const ctx = canvas.getContext("2d");
+  const cx = width / 2;
+  const cy = height / 2;
+  const radius = Math.min(width, height) * WORLD_GLOBE_RADIUS_RATIO;
+  const mapRadius = radius * app.worldZoom;
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.clip();
+
+  const ocean = ctx.createRadialGradient(cx - radius * 0.32, cy - radius * 0.34, radius * 0.08, cx, cy, radius);
+  ocean.addColorStop(0, "rgba(58,156,144,0.96)");
+  ocean.addColorStop(0.38, "rgba(9,58,72,0.98)");
+  ocean.addColorStop(0.72, "rgba(3,18,31,1)");
+  ocean.addColorStop(1, "rgba(0,5,12,1)");
+  ctx.fillStyle = ocean;
+  ctx.fillRect(0, 0, width, height);
+
+  drawWorldGraticule(ctx, cx, cy, mapRadius);
+  drawWorldLand(ctx, cx, cy, mapRadius);
+  drawWorldTourRoute(ctx, cx, cy, mapRadius);
+
+  const glow = ctx.createRadialGradient(cx - radius * 0.24, cy - radius * 0.34, radius * 0.04, cx, cy, radius);
+  glow.addColorStop(0, "rgba(247,244,232,0.16)");
+  glow.addColorStop(0.48, "rgba(57,245,176,0.05)");
+  glow.addColorStop(1, "rgba(0,0,0,0.72)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.lineWidth = Math.max(1, radius / 110);
+  ctx.strokeStyle = "rgba(151,231,255,0.3)";
+  ctx.stroke();
+
+  const atmosphere = ctx.createRadialGradient(cx, cy, radius * 0.88, cx, cy, radius * 1.05);
+  atmosphere.addColorStop(0, "rgba(151,231,255,0)");
+  atmosphere.addColorStop(0.68, "rgba(151,231,255,0.08)");
+  atmosphere.addColorStop(1, "rgba(151,231,255,0.34)");
+  ctx.fillStyle = atmosphere;
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius * 1.03, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function updateWorldMarkerPositions() {
+  if (!els.worldMarkers) return;
+  const buttons = [...els.worldMarkers.querySelectorAll(".world-marker[data-world-band-id]")];
+  const labels = [...els.worldMarkers.querySelectorAll(".world-ring-label[data-world-label-band-id]")];
+  const focusId = focusedWorldBandId();
+  els.worldMarkers.classList.toggle("focused", Boolean(focusId));
+  const bands = buttons
+    .map((button) => worldBands().find((item) => item.id === button.dataset.worldBandId))
+    .filter(Boolean);
+  const pointMap = worldBandPointMap(bands);
+  const ringSlotMap = worldRingSlotMap(bands, pointMap);
+  buttons.forEach((button) => {
+    const point = pointMap.get(button.dataset.worldBandId);
+    if (!point) return;
+    button.style.setProperty("--x", point.x.toFixed(2));
+    button.style.setProperty("--y", point.y.toFixed(2));
+    button.style.setProperty("--s", point.scale.toFixed(2));
+    button.style.setProperty("--depth", point.depth.toFixed(2));
+    button.style.setProperty("--z", point.z);
+    button.style.display = point.visible ? "" : "none";
+    button.classList.toggle("clustered", Number(point.clusterSize || 0) > 1);
+    button.classList.toggle("hovered", button.dataset.worldBandId === focusId);
+    if (point.clusterSize) button.dataset.clusterCount = String(point.clusterSize);
+  });
+  labels.forEach((label) => {
+    const band = worldBands().find((item) => item.id === label.dataset.worldLabelBandId);
+    const point = band ? pointMap.get(band.id) || worldProjection(band) : null;
+    if (!band || !point) return;
+    const slot = ringSlotMap.get(band.id);
+    const labelPoint = worldRingLabelProjection(point, band, slot);
+    label.style.setProperty("--label-x", labelPoint.x.toFixed(2));
+    label.style.setProperty("--label-y", labelPoint.y.toFixed(2));
+    label.style.setProperty("--z", point.z);
+    label.style.display = shouldShowWorldRingLabel(band, ringSlotMap) ? "" : "none";
+    label.classList.toggle("selected", band.id === app.worldBandId);
+    label.classList.toggle("hovered", band.id === app.worldHoverBandId);
+    label.classList.toggle("left", labelPoint.anchor === "left");
+    label.classList.toggle("right", labelPoint.anchor === "right");
+    label.classList.toggle("center", labelPoint.anchor === "center");
+  });
+}
+
+function renderWorldTourLayer() {
+  if (!els.worldTourLayer) return;
+  const band = activeWorldBand();
+  const stops = tourStopsForBand(band);
+  if (!band || !stops.length) {
+    els.worldTourLayer.innerHTML = "";
+    return;
+  }
+
+  const projected = stops
+    .map((stop, index) => ({ stop, index, point: tourProjection(stop) }))
+    .filter((item) => item.point.visible);
+  els.worldTourLayer.innerHTML = projected.map(({ stop, index, point }) => {
+    const classes = [
+      "world-tour-stop",
+      point.x > 72 ? "label-left" : "",
+      point.y > 74 ? "label-up" : ""
+    ].filter(Boolean).join(" ");
+    return `
+      <span class="${classes}" title="${escapeAttr(tourStopTitle(stop))}"
+        style="--x:${point.x.toFixed(2)}; --y:${point.y.toFixed(2)}; --s:${point.scale.toFixed(2)}; --depth:${point.depth.toFixed(2)}; --z:${point.z};">
+        <i></i>
+      </span>
+    `;
+  }).join("");
+}
+
+function refreshWorldGlobe() {
+  drawWorldGlobe();
+  updateWorldMarkerPositions();
+  renderWorldTourLayer();
+}
+
+function animateWorldGlobe(timestamp = 0) {
+  const delta = app.worldLastFrameAt ? Math.min(48, timestamp - app.worldLastFrameAt) : 16;
+  app.worldLastFrameAt = timestamp;
+  if (!app.worldDragging && app.worldAutoRotate) {
+    app.worldCenterLon = normalizeDegrees(app.worldCenterLon + app.worldVelocityLon * delta);
+    app.worldCenterLat = clampValue(app.worldCenterLat + app.worldVelocityLat * delta, -62, 62);
+    app.worldVelocityLon += (0.006 - app.worldVelocityLon) * 0.018;
+    app.worldVelocityLat *= 0.94;
+  }
+  if (app.worldDragging || !app.worldLastDrawAt || timestamp - app.worldLastDrawAt > 30) {
+    refreshWorldGlobe();
+    app.worldLastDrawAt = timestamp;
+  }
+  window.requestAnimationFrame(animateWorldGlobe);
+}
+
+function focusWorldBand(band) {
+  if (!band) return;
+  app.worldCenterLon = normalizeDegrees(Number(band.lon || app.worldCenterLon));
+  app.worldCenterLat = clampValue(Number(band.lat || 0), -62, 62);
+  app.worldVelocityLon = 0;
+  app.worldVelocityLat = 0;
+}
+
+function albumCoverKey(band, album) {
+  return `${band.id}:${album.title}`;
+}
+
+function albumCoverInitials(album) {
+  return [...String(album?.title || "RX").replace(/^(the|a|an)\s+/i, "").trim()].slice(0, 2).join("").toUpperCase() || "RX";
+}
+
+function syncWorldTabs() {
+  app.worldFilter = normalizeWorldFilter(localStorage.getItem(WORLD_FILTER_STORAGE_KEY) || app.worldFilter);
+  els.worldTabs?.querySelectorAll("[data-world-filter]").forEach((button) => {
+    button.classList.toggle("active", normalizeWorldFilter(button.dataset.worldFilter) === app.worldFilter);
+  });
+}
+
+function renderWorldRankStrip(band = activeWorldBand()) {
+  if (!els.worldRankStrip) return;
+  const entries = worldRankEntriesForBand(band);
+  els.worldRankStrip.classList.toggle("focused", Boolean(band));
+  els.worldRankStrip.innerHTML = entries.map((entry, index) => {
+    const albumKey = worldAlbumKey(entry.band, entry.album);
+    const grammy = albumGrammyMeta(entry.band, entry.album);
+    const prefix = app.worldFilter === "grammy" && grammy ? "G" : `#${index + 1}`;
+    const meta = app.worldFilter === "grammy" && grammy
+      ? `${grammy.year} · ${albumTasteMatch(entry.band, entry.album).score}%`
+      : `MATCH ${albumTasteMatch(entry.band, entry.album).score}%`;
+    return `
+      <button class="world-rank-item ${albumKey === app.worldAlbumKey ? "active" : ""}" type="button"
+        data-world-band-id="${escapeAttr(entry.band.id)}"
+        data-world-album-key="${escapeAttr(albumKey)}">
+        <strong>${escapeHtml(prefix)}</strong>
+        <span>${escapeHtml(entry.album.title)}</span>
+        <em>${escapeHtml(meta)}</em>
+      </button>
+    `;
+  }).join("");
+}
+
+function bindWorldMarkerButtons() {
+  if (!els.worldMarkers) return;
+  els.worldMarkers.querySelectorAll("[data-world-band-id], [data-world-label-band-id]").forEach((button) => {
+    const bandId = () => button.dataset.worldBandId || button.dataset.worldLabelBandId || "";
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const id = bandId();
+      selectWorldBand(id);
+      showWorldTourTooltip(worldBandById(id), event);
+    });
+    button.addEventListener("pointerenter", (event) => {
+      event.stopPropagation();
+      const id = bandId();
+      setWorldHoverBand(id);
+      showWorldTourTooltip(worldBandById(id), event);
+    });
+    button.addEventListener("pointermove", (event) => {
+      event.stopPropagation();
+      positionWorldTourTooltip(event);
+    });
+    button.addEventListener("pointerleave", (event) => {
+      event.stopPropagation();
+      setWorldHoverBand("");
+      hideWorldTourTooltip();
+    });
+  });
+}
+
+function renderWorldBands() {
+  if (!els.worldMarkers || !els.bandDetail) return;
+  const bands = filteredWorldBands();
+  if (!bands.length) {
+    els.worldMarkers.innerHTML = "";
+    els.bandDetail.innerHTML = `
+      <div>
+        <p class="band-detail-kicker">${escapeHtml(worldAlbumFilterLabel())}</p>
+        <h3>没有匹配专辑</h3>
+        <p>这个图层暂时没有可显示的专辑。</p>
+      </div>
+    `;
+    if (els.worldRankStrip) els.worldRankStrip.innerHTML = "";
+    return;
+  }
+  const selected = selectedWorldBand();
+  if (selected && app.worldBandId !== selected.id) app.worldBandId = selected.id;
+  const selectedAlbums = selected ? worldAlbumsForBand(selected) : [];
+  if (selectedAlbums.length && !selectedAlbums.some((entry) => worldAlbumKey(selected, entry.album) === app.worldAlbumKey)) {
+    app.worldAlbumKey = worldAlbumKey(selected, selectedAlbums[0].album);
+  }
+  if (app.worldHoverBandId && !worldBandById(app.worldHoverBandId)) app.worldHoverBandId = "";
+  if (selected) focusWorldBand(selected);
+  const pointMap = worldBandPointMap(bands);
+  const focusId = focusedWorldBandId();
+  const ringSlotMap = worldRingSlotMap(bands, pointMap);
+  els.worldMarkers.classList.toggle("focused", Boolean(focusId));
+
+  const markerHtml = bands.map((band) => {
+    const albumCount = worldAlbumsForBand(band).length;
+    const match = bandBestTasteMatch(band);
+    const point = pointMap.get(band.id) || worldProjection(band);
+    const isSelected = band.id === app.worldBandId;
+    const isHovered = band.id === focusId;
+    const topRank = band.salesRank && band.salesRank <= 5;
+    const classes = [
+      "world-marker",
+      isSelected ? "selected" : "",
+      isHovered ? "hovered" : "",
+      topRank ? "sales-top" : "",
+      band.taste ? "taste-anchor" : "",
+      point.clusterSize > 1 ? "clustered" : ""
+    ].filter(Boolean).join(" ");
+    return `
+      <button class="${classes}" type="button" data-world-band-id="${escapeAttr(band.id)}"
+        data-cluster-count="${escapeAttr(point.clusterSize || "")}"
+        title="${escapeAttr(`${band.name} · ${albumCount} albums · match ${match.score}% · ${band.country}`)}"
+        style="${point.visible ? "" : "display:none;"} --x:${point.x.toFixed(2)}; --y:${point.y.toFixed(2)}; --s:${point.scale.toFixed(2)}; --depth:${point.depth.toFixed(2)}; --z:${point.z};">
+      </button>
+    `;
+  }).join("");
+
+  const labelHtml = bands.map((band) => {
+    const point = pointMap.get(band.id) || worldProjection(band);
+    const slot = ringSlotMap.get(band.id);
+    const labelPoint = worldRingLabelProjection(point, band, slot);
+    const albumCount = worldAlbumsForBand(band).length;
+    const match = bandBestTasteMatch(band);
+    const grammyYears = worldAlbumsForBand(band)
+      .map(({ album }) => albumGrammyMeta(band, album)?.year)
+      .filter(Boolean);
+    const rank = app.worldFilter === "grammy" ? "G" : band.salesRank ? `#${band.salesRank}` : "T";
+    const layerMeta = app.worldFilter === "grammy" && grammyYears.length ? ` · Grammy ${grammyYears.join("/")}` : "";
+    const visible = shouldShowWorldRingLabel(band, ringSlotMap);
+    const classes = [
+      "world-ring-label",
+      band.id === app.worldBandId ? "selected" : "",
+      band.id === app.worldHoverBandId ? "hovered" : "",
+      labelPoint.anchor
+    ].filter(Boolean).join(" ");
+    return `
+      <button class="${classes}" type="button" data-world-label-band-id="${escapeAttr(band.id)}"
+        title="${escapeAttr(`${band.name} · ${albumCount} albums · match ${match.score}% · ${band.country}${layerMeta}`)}"
+        style="${visible ? "" : "display:none;"} --label-x:${labelPoint.x.toFixed(2)}; --label-y:${labelPoint.y.toFixed(2)}; --z:${point.z};">
+        ${escapeHtml(rank)} ${escapeHtml(band.name)}
+      </button>
+    `;
+  }).join("");
+
+  els.worldMarkers.innerHTML = markerHtml + labelHtml;
+  bindWorldMarkerButtons();
+
+  const active = activeWorldBand();
+  renderWorldRankStrip(active);
+  renderBandDetail(active);
+  loadWorldAlbumCovers(active);
+  refreshWorldGlobe();
+}
+
+function renderBandDetail(band) {
+  if (!els.bandDetail || !band) return;
+  const albums = worldAlbumsForBand(band);
+  const sales = band.claimedSalesM ? `${band.claimedSalesM}M` : "Taste";
+  const rank = app.worldFilter === "grammy" ? "GRAMMY" : band.salesRank ? `#${band.salesRank}` : "RadioX";
+  const bestMatch = bandBestTasteMatch(band);
+  const grammyYears = albums
+    .map(({ album }) => albumGrammyMeta(band, album))
+    .filter(Boolean)
+    .map((grammy) => grammy.year);
+  const sortLabel = app.worldFilter === "grammy" ? "GRAMMY YEAR" : "MATCH";
+  const sortValue = app.worldFilter === "grammy" && grammyYears.length
+    ? [...new Set(grammyYears)].join(", ")
+    : `${bestMatch.score}%`;
+  els.bandDetail.innerHTML = `
+    <div>
+      <p class="band-detail-kicker">${escapeHtml(rank)} · ${escapeHtml(worldAlbumFilterLabel())} · ${escapeHtml(band.country)} · ${escapeHtml(band.city)}</p>
+      <h3>${escapeHtml(band.name)}</h3>
+      <p>${escapeHtml((band.genres || []).join(" / "))}</p>
+    </div>
+    <div class="band-stats">
+      <div class="band-stat">
+        <small>SALES</small>
+        <strong>${escapeHtml(sales)}</strong>
+      </div>
+      <div class="band-stat">
+        <small>${escapeHtml(sortLabel)}</small>
+        <strong>${escapeHtml(sortValue)}</strong>
+      </div>
+    </div>
+    <div class="album-grid">
+      ${albums.map((entry) => renderWorldAlbumCard(band, entry.album, entry.albumIndex, entry.note)).join("")}
+    </div>
+  `;
+}
+
+function renderWorldTourPanel(band) {
+  const data = worldTourDataForBand(band);
+  const stops = tourStopsForBand(band);
+  const source = data?.sourceUrl ? `
+    <a class="tour-source" href="${escapeAttr(data.sourceUrl)}" target="_blank" rel="noreferrer">${escapeHtml(data.sourceLabel || "source")}</a>
+  ` : "";
+  if (!stops.length) {
+    return `
+      <section class="tour-panel">
+        <div class="tour-panel-head">
+          <small>TOUR MAP</small>
+          <strong>${escapeHtml(tourStatusHeading(data, stops))}</strong>
+        </div>
+        <p class="tour-empty">${escapeHtml(tourStatusCopy(band, data, stops))}</p>
+        ${source}
+      </section>
+    `;
+  }
+
+  return `
+    <section class="tour-panel">
+      <div class="tour-panel-head">
+        <small>TOUR MAP</small>
+        <strong>${escapeHtml(data?.name || "Recent tour")}</strong>
+      </div>
+      <div class="tour-list">
+        ${stops.slice(0, 9).map((stop) => `
+          <div class="tour-row">
+            <time>${escapeHtml(tourStopDateLabel(stop))}</time>
+            <span>${escapeHtml(tourStopCityLabel(stop))}</span>
+            <em>${escapeHtml(stop.venue || "")}</em>
+          </div>
+        `).join("")}
+      </div>
+      ${source}
+    </section>
+  `;
+}
+
+function renderWorldAlbumCard(band, album, index, note = "") {
+  const cover = app.worldAlbumCovers.get(albumCoverKey(band, album));
+  const lead = album.lead || album.tracks?.[0] || album.title;
+  const selected = worldAlbumKey(band, album) === app.worldAlbumKey;
+  const match = albumTasteMatch(band, album);
+  const grammy = albumGrammyMeta(band, album);
+  const meta = [
+    album.year,
+    grammy ? `${grammy.year} Grammy ${grammy.award}` : note || worldAlbumNote(band, album),
+    `MATCH ${match.score}%`,
+    match.reason,
+    `PLAY ${lead}`
+  ].filter(Boolean).join(" · ");
+  return `
+    <button class="album-card ${selected ? "selected" : ""}" type="button" data-world-band-id="${escapeAttr(band.id)}" data-world-album-index="${index}">
+      <span class="album-cover">
+        ${cover ? `<img src="${escapeAttr(cover)}" alt="${escapeAttr(`${album.title} cover`)}">` : `<span>${escapeHtml(albumCoverInitials(album))}</span>`}
+        <em class="album-match">MATCH ${escapeHtml(match.score)}%</em>
+      </span>
+      <b>${escapeHtml(album.title)}</b>
+      <small>${escapeHtml(meta)}</small>
+    </button>
+  `;
+}
+
+function loadWorldAlbumCovers(band) {
+  if (!band || !app.spotify?.status().authenticated || typeof app.spotify.resolveTrack !== "function") return;
+  worldAlbumsForBand(band).forEach(({ album }) => {
+    const key = albumCoverKey(band, album);
+    if (app.worldAlbumCovers.has(key) || app.worldAlbumLookup.has(key)) return;
+    app.worldAlbumLookup.add(key);
+    const lead = album.lead || album.tracks?.[0] || album.title;
+    app.spotify.resolveTrack({
+      title: lead,
+      artist: band.name,
+      query: `${lead} ${band.name}`
+    }).then((spotifyTrack) => {
+      const cover = spotifyAlbumCoverUrl(spotifyTrack);
+      if (cover) app.worldAlbumCovers.set(key, cover);
+      app.worldAlbumLookup.delete(key);
+      if (app.worldBandId === band.id) renderBandDetail(band);
+    }).catch((error) => {
+      app.worldAlbumLookup.delete(key);
+      console.warn("World album cover skipped", error);
+    });
+  });
+}
+
+function worldTrackFromAlbum(band, album) {
+  const title = album.lead || album.tracks?.[0] || album.title;
+  return {
+    id: `world-${stableVoiceHash(`${band.id}:${title}`)}`,
+    title,
+    artist: band.name,
+    query: `${title} ${band.name}`,
+    genres: band.genres || ["world-band"],
+    moods: ["drive", "focus", "breath"],
+    weather: ["clear", "cloudy", "rain"],
+    dayParts: ["morning", "workday", "dusk", "night", "deep-night"],
+    scheduleTags: ["open"],
+    energy: Math.round(Math.min(86, Math.max(34, Number(band.claimedSalesM || 80) / 3))),
+    era: band.claimedSalesM ? "world-sales-map" : "taste-map",
+    duration: 260,
+    story: {
+      headline: "World Bands Globe",
+      text: `${band.name} 的 ${title} 是从世界乐队地球仪里点进来的歌。RadioX 按国家、销量和你的 taste map 把它接进当前 Queue。`
+    }
+  };
+}
+
+async function playWorldAlbum(albumIndex) {
+  const band = selectedWorldBand();
+  const album = band?.albums?.[albumIndex];
+  if (!band || !album) return;
+  const queueKey = albumCoverKey(band, album);
+  if (app.worldQueueingKey === queueKey) return;
+  app.worldQueueingKey = queueKey;
+  setServerState("WORLD");
+  try {
+    const payload = await api("/api/queue-track", {
+      method: "POST",
+      body: JSON.stringify({
+        play: true,
+        track: worldTrackFromAlbum(band, album)
+      })
+    });
+    applyTrackChange(payload, { honorServerPlayState: true, deferVoice: true });
+  } catch (error) {
+    console.warn(error);
+    setServerState("QUEUE ERR");
+  } finally {
+    app.worldQueueingKey = "";
+  }
+}
+
+function selectWorldBand(id, albumKey = "") {
+  const band = worldBands().find((item) => item.id === id);
+  if (!band) return;
+  app.worldBandId = band.id;
+  app.worldHoverBandId = "";
+  const albums = worldAlbumsForBand(band);
+  app.worldAlbumKey = albumKey || (albums[0] ? worldAlbumKey(band, albums[0].album) : "");
+  focusWorldBand(band);
+  renderWorldBands();
+}
+
+function setWorldHoverBand(id = "") {
+  const nextId = worldBandById(id)?.id || "";
+  if (app.worldHoverBandId === nextId) return;
+  app.worldHoverBandId = nextId;
+  const active = activeWorldBand();
+  if (active) {
+    renderWorldRankStrip(active);
+    renderBandDetail(active);
+    loadWorldAlbumCovers(active);
+  }
+  refreshWorldGlobe();
+}
+
+function setWorldFullscreen(fullscreen) {
+  app.worldFullscreen = Boolean(fullscreen);
+  els.worldPanel?.classList.toggle("fullscreen", app.worldFullscreen);
+  document.body.classList.toggle("world-fullscreen-open", app.worldFullscreen);
+  if (els.worldFullscreenButton) {
+    els.worldFullscreenButton.classList.toggle("active", app.worldFullscreen);
+    els.worldFullscreenButton.textContent = app.worldFullscreen ? "EXIT" : "FULL";
+  }
+  window.setTimeout(refreshWorldGlobe, 60);
+  window.setTimeout(refreshWorldGlobe, 240);
+}
+
+function toggleWorldFullscreen() {
+  setWorldFullscreen(!app.worldFullscreen);
+}
+
+function handleWorldWheel(event) {
+  if (!els.worldGlobe) return;
+  event.preventDefault();
+  event.stopPropagation();
+  app.worldAutoRotate = false;
+  hideWorldTourTooltip();
+  const previousZoom = app.worldZoom;
+  const factor = Math.exp(-event.deltaY * 0.0012);
+  app.worldZoom = clampValue(app.worldZoom * factor, 0.78, app.worldFullscreen ? 4 : 3);
+  if (Math.abs(app.worldZoom - previousZoom) < 0.002) return;
+  app.worldVelocityLon *= 0.72;
+  app.worldVelocityLat *= 0.72;
+  refreshWorldGlobe();
+}
+
+function startWorldDrag(event) {
+  if (!els.worldGlobe || event.button > 0) return;
+  const target = event.target.closest?.("[data-world-band-id]");
+  if (target) return;
+  setWorldHoverBand("");
+  hideWorldTourTooltip();
+  app.worldAutoRotate = false;
+  app.worldDragging = true;
+  app.worldDragStart = {
+    x: event.clientX,
+    y: event.clientY,
+    lon: app.worldCenterLon,
+    lat: app.worldCenterLat,
+    lastX: event.clientX,
+    lastY: event.clientY,
+    lastAt: performance.now()
+  };
+  app.worldVelocityLon = 0;
+  app.worldVelocityLat = 0;
+  els.worldGlobe.classList.add("dragging");
+  els.worldGlobe.setPointerCapture?.(event.pointerId);
+}
+
+function moveWorldDrag(event) {
+  if (!app.worldDragging || !app.worldDragStart) return;
+  event.preventDefault();
+  const dx = event.clientX - app.worldDragStart.x;
+  const dy = event.clientY - app.worldDragStart.y;
+  app.worldCenterLon = normalizeDegrees(app.worldDragStart.lon - dx * 0.42);
+  app.worldCenterLat = clampValue(app.worldDragStart.lat + dy * 0.32, -62, 62);
+
+  const now = performance.now();
+  const elapsed = Math.max(12, now - app.worldDragStart.lastAt);
+  app.worldVelocityLon = 0;
+  app.worldVelocityLat = 0;
+  app.worldDragStart.lastX = event.clientX;
+  app.worldDragStart.lastY = event.clientY;
+  app.worldDragStart.lastAt = now;
+  refreshWorldGlobe();
+}
+
+function endWorldDrag(event) {
+  if (!app.worldDragging) return;
+  app.worldDragging = false;
+  app.worldDragStart = null;
+  app.worldVelocityLon = 0;
+  app.worldVelocityLat = 0;
+  els.worldGlobe?.classList.remove("dragging");
+  els.worldGlobe?.releasePointerCapture?.(event.pointerId);
 }
 
 function renderTasteTags(profile) {
@@ -845,7 +2782,6 @@ async function saveTasteProfile() {
     app.startedAt = Date.now();
     closeTasteSetup();
     setServerState("TASTE SAVED");
-    refreshDjForCurrent(payload.current?.id).catch(console.warn);
   } catch (error) {
     console.warn(error);
     if (els.tasteStatus) els.tasteStatus.textContent = "Save failed. Check the genre=weight lines.";
@@ -1102,6 +3038,7 @@ async function playCurrentOnSpotify(track, options = {}) {
   app.spotifyTrack = spotifyTrack;
   app.expectedSpotifyUri = spotifyTrack?.uri || "";
   app.spotifyAutoAdvanceUri = "";
+  renderAlbumArt(track, spotifyTrack);
   loadAudioFeaturesForSpotifyTrack(track, spotifyTrack).catch(console.warn);
   if (spotifyTrack?.duration_ms) {
     app.payload.current.duration = Math.round(spotifyTrack.duration_ms / 1000);
@@ -1175,8 +3112,7 @@ async function togglePlay() {
     stopDjVoice();
   }
   setPlaying(next);
-  if (next) speakDjIntro(app.payload);
-  else stopDjVoice();
+  if (!next) stopDjVoice();
 }
 
 async function refresh() {
@@ -1238,7 +3174,6 @@ function applyTrackChange(payload, options = {}) {
   } else if (app.playing) {
     startSimAudio().catch(console.warn);
   }
-  if (app.playing && !options.deferVoice) speakDjIntro(payload, { force: true });
 }
 
 async function applyRemotePlayState(playing) {
@@ -1251,7 +3186,6 @@ async function applyRemotePlayState(playing) {
       await startSimAudio();
     }
     applyLocalPlayState(true);
-    speakDjIntro(app.payload);
     return;
   }
 
@@ -1288,7 +3222,6 @@ async function syncExternalState() {
     return;
   }
   applyTrackChange(payload, { honorServerPlayState: true, deferVoice: true });
-  if (currentChanged) refreshDjForCurrent(payload.current?.id).catch(console.warn);
 }
 
 async function nextTrack() {
@@ -1297,7 +3230,6 @@ async function nextTrack() {
   try {
     const payload = await api("/api/next", { method: "POST", body: "{}" });
     applyTrackChange(payload, { deferVoice: true });
-    refreshDjForCurrent(payload.current?.id).catch(console.warn);
   } finally {
     app.advancing = false;
   }
@@ -1309,7 +3241,6 @@ async function previousTrack() {
   try {
     const payload = await api("/api/previous", { method: "POST", body: "{}" });
     applyTrackChange(payload, { deferVoice: true });
-    refreshDjForCurrent(payload.current?.id).catch(console.warn);
   } finally {
     app.advancing = false;
   }
@@ -1327,7 +3258,6 @@ async function jumpToQueueTrack(index) {
       body: JSON.stringify({ index, trackId: queue[index]?.id })
     });
     applyTrackChange(payload, { deferVoice: true });
-    refreshDjForCurrent(payload.current?.id).catch(console.warn);
   } finally {
     app.advancing = false;
   }
@@ -1370,22 +3300,6 @@ async function loadAudioFeaturesForSpotifyTrack(localTrack, spotifyTrack) {
       : null;
   }
   return features;
-}
-
-async function refreshDjForCurrent(expectedId) {
-  const payload = await api("/api/now");
-  if (expectedId && payload.current?.id !== expectedId) return;
-  const wasPlaying = app.playing;
-  const elapsed = playbackSeconds();
-  if (payload.current?.id === app.payload?.current?.id && app.payload?.current?.duration) {
-    payload.current.duration = app.payload.current.duration;
-  }
-  render(payload);
-  app.elapsedBeforePlay = Math.min(elapsed, payload.current?.duration || elapsed);
-  app.startedAt = Date.now();
-  applyLocalPlayState(wasPlaying);
-  renderProgress();
-  if (wasPlaying) speakDjIntro(payload, { force: true });
 }
 
 function estimatedTempo(track) {
@@ -1587,6 +3501,7 @@ function applySpotifyPlayerState(spotifyState) {
   app.playbackMode = "spotify";
   app.expectedSpotifyUri = actualUri || app.expectedSpotifyUri;
   app.spotifyTrack = spotifyTrack;
+  renderAlbumArt(app.payload?.current, spotifyTrack);
   loadAudioFeaturesForSpotifyTrack(app.payload?.current, spotifyTrack).catch(console.warn);
   syncFavoriteStatusFromSpotify(app.payload?.current).catch(console.warn);
   const autoAdvancing = syncSpotifyPlaybackState(spotifyState, actualUri || app.expectedSpotifyUri);
@@ -1637,6 +3552,7 @@ async function syncSpotifyProgressFromPlayer() {
 
 async function initSpotify() {
   const serverConfig = await api("/api/config");
+  app.serviceConfig = serverConfig;
   const savedClientId = localStorage.getItem(SPOTIFY_CLIENT_ID_KEY);
   const config = {
     ...serverConfig,
@@ -1649,15 +3565,20 @@ async function initSpotify() {
   app.spotify = new SpotifyBridge();
   await app.spotify.init(config).catch((error) => {
     console.warn(error);
+    setSystemIssue("Spotify", error.message || "init failed");
     setServerState(/spotify/i.test(error.message || "") ? "LOGIN ERR" : "READY");
     return app.spotify.status();
   });
+  renderSystemStatus();
   updateSpotifyButton();
   app.spotifyLibrarySyncDisabled = false;
   const shouldAutoConnect = app.spotify?.justAuthenticated;
   app.spotify.addEventListener("ready", () => {
+    setSystemIssue("Spotify", "");
     app.playbackMode = app.playbackMode === "spotify" ? "spotify" : app.playbackMode;
     updateSpotifyButton();
+    renderSystemStatus();
+    loadWorldAlbumCovers(selectedWorldBand());
     syncSpotifyProgressFromPlayer().catch(console.warn);
     syncFavoriteStatusFromSpotify(app.payload?.current, { force: true }).catch(console.warn);
     api("/api/play-state", {
@@ -1680,6 +3601,7 @@ async function initSpotify() {
   });
   app.spotify.addEventListener("error", (event) => {
     if (/token|auth/i.test(event.detail?.message || "")) app.spotify?.clearToken();
+    setSystemIssue("Spotify", event.detail?.message || "Spotify player error");
     els.spotifyButton.textContent = app.spotify?.configured()
       ? (app.spotify?.status().authenticated ? "CONNECT" : "LOGIN")
       : "SET SPOTIFY";
@@ -1689,6 +3611,7 @@ async function initSpotify() {
       setPlaying(false);
     }
     console.warn(event.detail.message);
+    renderSystemStatus();
   });
   if (shouldAutoConnect) {
     setServerState("LOGIN OK");
@@ -1767,6 +3690,69 @@ function bindEvents() {
     if (!item) return;
     jumpToQueueTrack(Number(item.dataset.queueIndex));
   });
+  els.worldGlobe?.addEventListener("pointerdown", startWorldDrag);
+  els.worldGlobe?.addEventListener("pointermove", moveWorldDrag);
+  els.worldGlobe?.addEventListener("pointerup", endWorldDrag);
+  els.worldGlobe?.addEventListener("pointercancel", endWorldDrag);
+  els.worldGlobe?.addEventListener("wheel", handleWorldWheel, { passive: false });
+  els.worldGlobe?.addEventListener("dblclick", (event) => {
+    event.preventDefault();
+    toggleWorldFullscreen();
+  });
+  els.worldFullscreenButton?.addEventListener("click", toggleWorldFullscreen);
+  window.addEventListener("resize", refreshWorldGlobe);
+  els.worldMarkers?.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-world-band-id]");
+    if (!item) return;
+    selectWorldBand(item.dataset.worldBandId);
+    showWorldTourTooltip(worldBandById(item.dataset.worldBandId), event);
+  });
+  els.worldMarkers?.addEventListener("pointerover", (event) => {
+    const item = event.target.closest("[data-world-band-id]");
+    if (!item) return;
+    setWorldHoverBand(item.dataset.worldBandId);
+    showWorldTourTooltip(worldBandById(item.dataset.worldBandId), event);
+  });
+  els.worldMarkers?.addEventListener("pointermove", (event) => {
+    const item = event.target.closest("[data-world-band-id]");
+    if (!item) return;
+    positionWorldTourTooltip(event);
+  });
+  els.worldMarkers?.addEventListener("pointerleave", () => {
+    setWorldHoverBand("");
+    hideWorldTourTooltip();
+  });
+  els.worldRankStrip?.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-world-band-id]");
+    if (!item) return;
+    selectWorldBand(item.dataset.worldBandId, item.dataset.worldAlbumKey || "");
+  });
+  els.worldTabs?.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-world-filter]");
+    if (!item) return;
+    app.worldFilter = normalizeWorldFilter(item.dataset.worldFilter || "million");
+    app.worldHoverBandId = "";
+    hideWorldTourTooltip();
+    localStorage.setItem(WORLD_FILTER_STORAGE_KEY, app.worldFilter);
+    els.worldTabs.querySelectorAll("[data-world-filter]").forEach((button) => {
+      button.classList.toggle("active", button === item);
+    });
+    const currentBand = worldBandById(app.worldBandId);
+    const nextBand = currentBand || filteredWorldBands()[0] || null;
+    app.worldBandId = nextBand?.id || "";
+    const nextAlbum = nextBand ? worldAlbumsForBand(nextBand)[0]?.album : null;
+    app.worldAlbumKey = nextAlbum ? worldAlbumKey(nextBand, nextAlbum) : "";
+    renderWorldBands();
+  });
+  els.bandDetail?.addEventListener("click", (event) => {
+    const albumButton = event.target.closest("[data-world-album-index]");
+    if (!albumButton) return;
+    const band = worldBands().find((item) => item.id === albumButton.dataset.worldBandId) || selectedWorldBand();
+    const album = band?.albums?.[Number(albumButton.dataset.worldAlbumIndex)];
+    if (band && album) app.worldAlbumKey = worldAlbumKey(band, album);
+    if (band) app.worldBandId = band.id;
+    playWorldAlbum(Number(albumButton.dataset.worldAlbumIndex)).catch(console.warn);
+  });
   els.favButton.addEventListener("click", async () => {
     const track = app.payload?.current;
     const id = track?.id;
@@ -1788,8 +3774,7 @@ function bindEvents() {
   });
   els.voiceButton?.addEventListener("click", () => {
     setVoiceEnabled(!app.voiceEnabled);
-    if (app.voiceEnabled) speakDjIntro(app.payload, { force: true });
-    else stopDjVoice();
+    if (!app.voiceEnabled) stopDjVoice();
   });
   window.speechSynthesis?.addEventListener?.("voiceschanged", updateVoiceButton);
   els.volume.addEventListener("input", () => {
@@ -1860,6 +3845,7 @@ function bindEvents() {
   });
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
+      if (app.worldFullscreen) setWorldFullscreen(false);
       closeSpotifySetup();
       closeTasteSetup();
     }
@@ -1879,12 +3865,18 @@ async function main() {
   setInterval(() => syncExternalState().catch(console.warn), 2000);
   setInterval(() => syncFavoriteStatusFromSpotify(app.payload?.current).catch(console.warn), 15000);
   bindEvents();
+  syncWorldTabs();
   await initSpotify();
   await refresh();
+  await refreshWeatherStatus();
+  await loadWorldCatalogFromApi();
+  renderWorldBands();
+  loadWorldAtlas().catch(console.warn);
   scheduleSpotifyPrefetch();
   await syncSpotifyProgressFromPlayer().catch(console.warn);
   await syncFavoriteStatusFromSpotify(app.payload?.current, { force: true }).catch(console.warn);
   drawSpectrum();
+  window.requestAnimationFrame(animateWorldGlobe);
   setServerState("READY");
 }
 

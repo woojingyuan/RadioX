@@ -79,6 +79,32 @@ export OPENWEATHER_UNITS="metric"
 export OPENWEATHER_LANG="zh_cn"
 ```
 
+## World Album Globe
+
+The globe is local-first. Curated album and artist data lives in `public/world-bands.js`, while future tour overlays live in `public/world-tours.js`. The UI filters tour stops to future dates only; if an artist has no future verified stops, the globe stays in album/match mode and does not show historical tour status copy.
+
+RadioX also has a small review queue for semi-automatic data ingestion:
+
+- `GET /api/world/catalog` returns curated data, pending review items, provider readiness, and future-tour stats.
+- `POST /api/world/sync-preview` accepts candidate artist/album/tour records and stores them as `pending`.
+- `POST /api/world/approve` approves or rejects a pending item. Approved records are merged into the globe at runtime.
+
+Optional provider configuration for future sync tooling:
+
+```bash
+export MUSICBRAINZ_USER_AGENT="RadioX/0.1 your-email@example.com"
+export TICKETMASTER_API_KEY="optional-ticketmaster-key"
+export BANDSINTOWN_APP_ID="optional-bandsintown-app-id"
+```
+
+The first product version does not auto-publish external data. Official artist sites, Spotify metadata, MusicBrainz, Wikidata, Ticketmaster, and Bandsintown are treated as candidate sources, and reviewed data remains local.
+
+Validate the globe data with:
+
+```bash
+npm run validate:world
+```
+
 ## Simulated Audio
 
 When Spotify is not connected, the play button starts a local Web Audio engine. It generates a radio bed from the current track's genre and energy: quiet recommendations lean toward pads/plucks, while rock recommendations add bass and drums. It is intentionally not a copy of the original song.
@@ -95,7 +121,26 @@ The `VOICE ON` control reads the same DJ output shown on screen. It prefers the 
 - `data/profile.json` taste profile
 - `data/routines.json` daily context defaults
 - `data/playlist-catalog.json` local recommendation seed catalog
-- `data/state.json` mutable local station state
+- `data/world-pending.json` local review queue for world music candidates
+- `data/world-approved.json` approved world music candidates
+- `data/state.example.json` clean template for local station state
+- `data/state.json` mutable local station state, created locally and ignored by git
+
+## Checks
+
+Run deterministic syntax and world-data checks with:
+
+```bash
+npm test
+```
+
+With RadioX running, verify the live player, Queue, static UI, and world catalog API contracts with:
+
+```bash
+npm run smoke
+```
+
+Set `RADIOX_BASE_URL` to smoke-test another local instance. Tests that launch an isolated server can set `RADIOX_STATE_FILE` to keep the real listening history untouched.
 
 ## Notes
 

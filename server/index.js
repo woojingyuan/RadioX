@@ -1,6 +1,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const vm = require("vm");
 const { URL } = require("url");
 
 const ROOT = path.join(__dirname, "..");
@@ -8,6 +9,10 @@ loadLocalEnv(path.join(ROOT, ".env"));
 
 const PUBLIC_DIR = path.join(ROOT, "public");
 const DATA_DIR = path.join(ROOT, "data");
+const STATE_FILE = process.env.RADIOX_STATE_FILE
+  ? path.resolve(process.env.RADIOX_STATE_FILE)
+  : path.join(DATA_DIR, "state.json");
+const STATE_TEMPLATE_FILE = path.join(DATA_DIR, "state.example.json");
 const PORT = Number(process.env.PORT || 8765);
 const STATION_TIME_ZONE = process.env.RADIOX_TIME_ZONE || "Asia/Tokyo";
 const QUEUE_SIZE = 10;
@@ -48,12 +53,13 @@ const OPENWEATHER_LANG = process.env.OPENWEATHER_LANG || "zh_cn";
 const OPENWEATHER_LOCATION_LABEL = process.env.OPENWEATHER_LOCATION_LABEL || "";
 const OPENWEATHER_CACHE_MS = Number(process.env.OPENWEATHER_CACHE_MS || 10 * 60 * 1000);
 const OPENWEATHER_TIMEOUT_MS = Number(process.env.OPENWEATHER_TIMEOUT_MS || 5000);
-const DJ_SCRIPT_CACHE_LIMIT = 48;
 const DJ_AUDIO_CACHE_LIMIT = 24;
 const DJ_CHAT_LIMIT = 40;
 const REQUESTED_TRACK_LIMIT = 40;
 const CHAT_QUEUE_INSERT_LIMIT = 5;
-const djScriptCache = new Map();
+const WORLD_PENDING_FILE = "world-pending.json";
+const WORLD_APPROVED_FILE = "world-approved.json";
+const WORLD_CATALOG_VERSION = "world-review-v1";
 const djAudioCache = new Map();
 const openWeatherCache = {
   value: null,
@@ -89,8 +95,18 @@ function loadLocalEnv(filePath) {
   });
 }
 
+function dataFilePath(fileName) {
+  return fileName === "state.json" ? STATE_FILE : path.join(DATA_DIR, fileName);
+}
+
+function ensureLocalState() {
+  if (fs.existsSync(STATE_FILE)) return;
+  fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
+  fs.copyFileSync(STATE_TEMPLATE_FILE, STATE_FILE);
+}
+
 function readJson(fileName) {
-  return JSON.parse(fs.readFileSync(path.join(DATA_DIR, fileName), "utf8"));
+  return JSON.parse(fs.readFileSync(dataFilePath(fileName), "utf8"));
 }
 
 function readOptionalJson(fileName, fallback) {
@@ -105,7 +121,325 @@ function readOptionalJson(fileName, fallback) {
 }
 
 function writeJson(fileName, value) {
-  fs.writeFileSync(path.join(DATA_DIR, fileName), `${JSON.stringify(value, null, 2)}\n`);
+  fs.writeFileSync(dataFilePath(fileName), `${JSON.stringify(value, null, 2)}\n`);
+}
+
+ensureLocalState();
+
+function slugifyWorldId(value) {
+  return String(value || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+}
+
+function readWorldReviewFile(fileName) {
+  const raw = readOptionalJson(fileName, { schemaVersion: 1, items: [], updatedAt: null });
+  return {
+    schemaVersion: Number(raw.schemaVersion || 1),
+    items: Array.isArray(raw.items) ? raw.items : [],
+    updatedAt: raw.updatedAt || null,
+    lastSyncPreview: raw.lastSyncPreview || null
+  };
+}
+
+function writeWorldReviewFile(fileName, value) {
+  writeJson(fileName, {
+    schemaVersion: 1,
+    items: Array.isArray(value.items) ? value.items : [],
+    updatedAt: new Date().toISOString(),
+    ...(value.lastSyncPreview ? { lastSyncPreview: value.lastSyncPreview } : {})
+  });
+}
+
+function readPublicWorldGlobals() {
+  const context = { window: {} };
+  vm.createContext(context);
+  ["world-bands.js", "world-tours.js"].forEach((fileName) => {
+    const filePath = path.join(PUBLIC_DIR, fileName);
+    if (fs.existsSync(filePath)) {
+      vm.runInContext(fs.readFileSync(filePath, "utf8"), context, { filename: fileName });
+    }
+  });
+  return {
+    bands: Array.isArray(context.window.RADIOX_WORLD_BANDS) ? context.window.RADIOX_WORLD_BANDS : [],
+    tours: context.window.RADIOX_WORLD_TOURS && typeof context.window.RADIOX_WORLD_TOURS === "object"
+      ? context.window.RADIOX_WORLD_TOURS
+      : {}
+  };
+}
+
+function providerStatus() {
+  return [
+    {
+      id: "official",
+      label: "Official artist sites",
+      configured: true,
+      mode: "manual-review",
+      priority: 1
+    },
+    {
+      id: "spotify",
+      label: "Spotify artist metadata",
+      configured: Boolean(process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET),
+      mode: "metadata-only",
+      priority: 2
+    },
+    {
+      id: "musicbrainz",
+      label: "MusicBrainz",
+      configured: Boolean(process.env.MUSICBRAINZ_USER_AGENT),
+      mode: "metadata-only",
+      priority: 3
+    },
+    {
+      id: "wikidata",
+      label: "Wikidata",
+      configured: true,
+      mode: "metadata-only",
+      priority: 4
+    },
+    {
+      id: "ticketmaster",
+      label: "Ticketmaster",
+      configured: Boolean(process.env.TICKETMASTER_API_KEY),
+      mode: "tour-enhancement",
+      priority: 5
+    },
+    {
+      id: "bandsintown",
+      label: "Bandsintown",
+      configured: Boolean(process.env.BANDSINTOWN_APP_ID),
+      mode: "tour-enhancement",
+      priority: 6
+    }
+  ];
+}
+
+function normalizeWorldSource(source) {
+  const raw = source && typeof source === "object" && !Array.isArray(source) ? source : {};
+  return {
+    type: cleanTrackLabel(raw.type || raw.provider || "manual", 40),
+    label: cleanTrackLabel(raw.label || raw.name || raw.type || "Manual review", 100),
+    url: cleanTrackLabel(raw.url || "", 280),
+    priority: Number.isFinite(Number(raw.priority)) ? Number(raw.priority) : 99
+  };
+}
+
+function normalizeWorldTourDate(rawDate) {
+  if (!rawDate) return "";
+  const text = String(rawDate).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toISOString().slice(0, 10);
+}
+
+function normalizeWorldTourStop(stop) {
+  const raw = stop && typeof stop === "object" && !Array.isArray(stop) ? stop : {};
+  const date = normalizeWorldTourDate(raw.date || raw.startDate);
+  if (!date) return null;
+  return {
+    date,
+    endDate: normalizeWorldTourDate(raw.endDate) || date,
+    city: cleanTrackLabel(raw.city || "", 90),
+    region: cleanTrackLabel(raw.region || raw.state || "", 90),
+    country: cleanTrackLabel(raw.country || "", 90),
+    venue: cleanTrackLabel(raw.venue || raw.name || "", 140),
+    lat: Number.isFinite(Number(raw.lat)) ? Number(raw.lat) : null,
+    lon: Number.isFinite(Number(raw.lon)) ? Number(raw.lon) : null,
+    source: normalizeWorldSource(raw.source || {})
+  };
+}
+
+function normalizeWorldCandidate(raw, sourceOverride = null) {
+  const item = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const artistRaw = item.artist || item.band || {};
+  const artistName = cleanTrackLabel(
+    artistRaw.name || artistRaw.artist || item.artistName || item.bandName || item.name,
+    100
+  );
+  if (!artistName) return null;
+  const artistId = cleanTrackLabel(
+    artistRaw.id || item.artistId || item.bandId || slugifyWorldId(artistName),
+    80
+  ) || slugifyWorldId(artistName);
+  const source = normalizeWorldSource(sourceOverride || item.source || item.tour?.source || {});
+  const albumRaw = item.album && typeof item.album === "object" && !Array.isArray(item.album) ? item.album : null;
+  const tourRaw = item.tour && typeof item.tour === "object" && !Array.isArray(item.tour) ? item.tour : null;
+  const tourDates = (Array.isArray(tourRaw?.dates) ? tourRaw.dates : Array.isArray(item.tourDates) ? item.tourDates : [])
+    .map(normalizeWorldTourStop)
+    .filter(Boolean);
+  const nowIso = new Date().toISOString();
+  const idSeed = [
+    item.id,
+    artistId,
+    albumRaw?.title || item.albumTitle || "",
+    tourRaw?.name || "",
+    source.url || source.label
+  ].filter(Boolean).join("|");
+
+  const normalized = {
+    id: cleanTrackLabel(item.id || `world-${stableHash(idSeed || artistId).toString(36)}`, 100),
+    status: item.status === "approved" ? "approved" : "pending",
+    kind: cleanTrackLabel(item.kind || (tourDates.length ? "tour" : albumRaw ? "album" : "artist"), 40),
+    artist: {
+      id: artistId,
+      name: artistName,
+      country: cleanTrackLabel(artistRaw.country || item.country || "", 90),
+      city: cleanTrackLabel(artistRaw.city || item.city || "", 90),
+      lat: Number.isFinite(Number(artistRaw.lat ?? item.lat)) ? Number(artistRaw.lat ?? item.lat) : null,
+      lon: Number.isFinite(Number(artistRaw.lon ?? item.lon)) ? Number(artistRaw.lon ?? item.lon) : null
+    },
+    source,
+    verifiedAt: item.verifiedAt || null,
+    createdAt: item.createdAt || nowIso,
+    updatedAt: nowIso
+  };
+
+  normalized.band = { ...normalized.artist };
+
+  if (albumRaw) {
+    normalized.album = {
+      title: cleanTrackLabel(albumRaw.title || albumRaw.name || item.albumTitle || "", 120),
+      year: cleanTrackLabel(albumRaw.year || item.year || "", 20),
+      category: cleanTrackLabel(albumRaw.category || item.category || "", 40),
+      lead: cleanTrackLabel(albumRaw.lead || item.lead || "", 120),
+      tracks: normalizeStringArray(albumRaw.tracks || item.tracks, [], 24),
+      salesM: Number.isFinite(Number(albumRaw.salesM ?? item.salesM)) ? Number(albumRaw.salesM ?? item.salesM) : null,
+      grammyYear: cleanTrackLabel(albumRaw.grammyYear || item.grammyYear || "", 20),
+      image: cleanTrackLabel(albumRaw.image || item.image || "", 280)
+    };
+  }
+
+  if (tourDates.length) {
+    normalized.tour = {
+      name: cleanTrackLabel(tourRaw?.name || item.tourName || `${artistName} upcoming tour`, 140),
+      dates: tourDates,
+      source
+    };
+  }
+
+  return normalized;
+}
+
+function futureWorldStops(stops, today = localDateKey()) {
+  return (Array.isArray(stops) ? stops : [])
+    .filter((stop) => normalizeWorldTourDate(stop.endDate || stop.date) >= today)
+    .map((stop) => ({ ...stop, source: normalizeWorldSource(stop.source || {}) }));
+}
+
+function approvedWorldReviewItems() {
+  return readWorldReviewFile(WORLD_APPROVED_FILE).items
+    .map((item) => normalizeWorldCandidate(item))
+    .filter((item) => item && item.status === "approved");
+}
+
+function countWorldTourStats(baseTours, approvedItems) {
+  const today = localDateKey();
+  const futureByBand = new Map();
+  Object.entries(baseTours || {}).forEach(([bandId, tour]) => {
+    const stops = futureWorldStops(tour?.stops || tour?.dates, today);
+    if (stops.length) futureByBand.set(bandId, (futureByBand.get(bandId) || 0) + stops.length);
+  });
+  approvedItems.forEach((item) => {
+    const stops = futureWorldStops(item.tour?.dates, today);
+    if (stops.length) futureByBand.set(item.artist.id, (futureByBand.get(item.artist.id) || 0) + stops.length);
+  });
+  return {
+    futureTourBands: futureByBand.size,
+    futureTourStops: [...futureByBand.values()].reduce((sum, value) => sum + value, 0)
+  };
+}
+
+function worldCatalogPayload(extra = {}) {
+  const pendingFile = readWorldReviewFile(WORLD_PENDING_FILE);
+  const approvedFile = readWorldReviewFile(WORLD_APPROVED_FILE);
+  const globals = readPublicWorldGlobals();
+  const pending = pendingFile.items
+    .map((item) => normalizeWorldCandidate(item))
+    .filter((item) => item && item.status === "pending");
+  const approvedItems = approvedFile.items
+    .map((item) => normalizeWorldCandidate(item))
+    .filter((item) => item && item.status === "approved");
+  const tourStats = countWorldTourStats(globals.tours, approvedItems);
+
+  return {
+    version: WORLD_CATALOG_VERSION,
+    generatedAt: new Date().toISOString(),
+    approved: {
+      bands: globals.bands,
+      tours: globals.tours,
+      reviewItems: approvedItems
+    },
+    pending,
+    providers: providerStatus(),
+    stats: {
+      bands: globals.bands.length,
+      tourBands: Object.keys(globals.tours || {}).length,
+      pending: pending.length,
+      approvedReviewItems: approvedItems.length,
+      ...tourStats
+    },
+    lastSyncPreview: pendingFile.lastSyncPreview || null,
+    ...extra
+  };
+}
+
+function upsertPendingWorldCandidates(rawCandidates, sourceOverride = null) {
+  const file = readWorldReviewFile(WORLD_PENDING_FILE);
+  const byId = new Map(file.items.map((item) => [String(item.id), item]));
+  const normalized = (Array.isArray(rawCandidates) ? rawCandidates : [])
+    .map((item) => normalizeWorldCandidate(item, sourceOverride))
+    .filter(Boolean)
+    .map((item) => ({ ...item, status: "pending", verifiedAt: null }));
+  normalized.forEach((item) => byId.set(item.id, item));
+  const next = {
+    ...file,
+    items: [...byId.values()],
+    lastSyncPreview: {
+      requestedAt: new Date().toISOString(),
+      imported: normalized.length,
+      providers: providerStatus()
+    }
+  };
+  writeWorldReviewFile(WORLD_PENDING_FILE, next);
+  return normalized;
+}
+
+function reviewWorldCandidate(candidateId, action, override = null) {
+  const id = cleanTrackLabel(candidateId || "", 100);
+  if (!id) throw new Error("Missing world candidate id");
+  const pendingFile = readWorldReviewFile(WORLD_PENDING_FILE);
+  const approvedFile = readWorldReviewFile(WORLD_APPROVED_FILE);
+  const index = pendingFile.items.findIndex((item) => String(item.id) === id);
+  if (index < 0 && !override) throw new Error(`World candidate not found: ${id}`);
+
+  const base = override || pendingFile.items[index];
+  const normalized = normalizeWorldCandidate(base);
+  if (!normalized) throw new Error("Invalid world candidate");
+
+  const remaining = pendingFile.items.filter((item) => String(item.id) !== id);
+  writeWorldReviewFile(WORLD_PENDING_FILE, { ...pendingFile, items: remaining });
+
+  if (action === "reject") {
+    return { item: { ...normalized, status: "rejected", reviewedAt: new Date().toISOString() } };
+  }
+
+  const approvedItem = {
+    ...normalized,
+    status: "approved",
+    verifiedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  const byId = new Map(approvedFile.items.map((item) => [String(item.id), item]));
+  byId.set(approvedItem.id, approvedItem);
+  writeWorldReviewFile(WORLD_APPROVED_FILE, { ...approvedFile, items: [...byId.values()] });
+  return { item: approvedItem };
 }
 
 function localDateKey(date = new Date()) {
@@ -1349,49 +1683,8 @@ function makeReason(track, context) {
   return `${genreLine}。${moodLine}。${storyLine}。`;
 }
 
-function makeDjScript(current, context, profile) {
-  const story = current.story?.text || "";
-
-  return [
-    {
-      by: profile.djName,
-      at: "now",
-      text: `现在放 ${current.artist} 的 ${current.title}。`
-    },
-    {
-      by: profile.djName,
-      at: "+04s",
-      text: `${current.title}，${current.artist}。${current.reason}`
-    },
-    {
-      by: profile.djName,
-      at: "+08s",
-      text: story
-    }
-  ].filter((line) => line.text);
-}
-
 function openAiConfigured() {
   return Boolean(process.env.OPENAI_API_KEY);
-}
-
-function djScriptCacheKey(payload) {
-  const { current, context } = payload;
-  return [
-    current?.id || "",
-    context?.now?.dateKey || "",
-    context?.now?.dayPart || "",
-    context?.weather || "",
-    context?.mood || "",
-    context?.intensity || "",
-    context?.planText || "",
-    current?.story?.text || ""
-  ].join("|");
-}
-
-function rememberCachedDjScript(key, transcript) {
-  if (!key || !transcript?.length) return;
-  rememberLimited(djScriptCache, key, transcript, DJ_SCRIPT_CACHE_LIMIT);
 }
 
 function extractOpenAiText(body) {
@@ -1403,39 +1696,6 @@ function extractOpenAiText(body) {
     });
   });
   return chunks.join("\n").trim();
-}
-
-function parseDjJson(text) {
-  const cleaned = String(text || "")
-    .trim()
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/```$/i, "")
-    .trim();
-  try {
-    return JSON.parse(cleaned);
-  } catch (error) {
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    if (!match) throw error;
-    return JSON.parse(match[0]);
-  }
-}
-
-function normalizeDjLine(value, maxLength = 280) {
-  const staleWeatherPhrase = new RegExp("\\u4e91\\u5c42\\u538b\\u7740[^。！？!?]*\\u900f\\u6c14\\u7684\\u7a7a\\u95f4[。！？!?]*", "g");
-  return String(value || "")
-    .replace(/\s+/g, " ")
-    .replace(staleWeatherPhrase, "")
-    .replace(/想着你今天这件事：?[^。！？!?]*[。！？!?，,、\s]*/g, "")
-    .replace(/这首歌不用急[，,、\s]*慢慢进来就好[。！？!?]*/g, "")
-    .replace(/^听完(?:它|这首歌?|这一首)[，,、\s]*/g, "")
-    .replace(/听完(?:它|这首歌?|这一首)[，,、\s]*/g, "")
-    .replace(/^我们?顺着(?:情绪|这份情绪|这种情绪|今天的情绪)(?:走进|进入|来到)?[，,、\s]*/g, "")
-    .replace(/顺着情绪走进/g, "")
-    .replace(/我们接着(?:走进|进入|来到)[^，。！？!?]*[，,、\s]*/g, "")
-    .replace(/^[，,、\s]+|[，,、\s]+$/g, "")
-    .trim()
-    .slice(0, maxLength);
 }
 
 function normalizeChatText(value, maxLength = 1400) {
@@ -1473,114 +1733,6 @@ function compactChat(messages) {
       at: message.at || new Date().toISOString()
     }))
     .slice(-DJ_CHAT_LIMIT);
-}
-
-function aiScriptToTranscript(script, profile) {
-  const parts = [
-    ["now", script.intro],
-    ["+07s", script.story],
-    ["+16s", script.fit],
-    ["+25s", script.segue]
-  ];
-  return parts
-    .map(([at, text]) => ({
-      by: profile.djName,
-      at,
-      text: normalizeDjLine(text)
-    }))
-    .filter((line) => line.text);
-}
-
-function buildDjPrompt(payload) {
-  const { current, context, profile } = payload;
-  return JSON.stringify({
-    listener: profile.nickname,
-    station: profile.stationName,
-    currentTrack: {
-      title: current.title,
-      artist: current.artist,
-      genres: current.genres,
-      energy: current.energy,
-      storyHeadline: current.story?.headline,
-      storySeed: current.story?.text,
-      recommendationReason: current.reason
-    },
-    dayContext: {
-      dayPart: context.now.dayPart,
-      weather: context.weather,
-      weatherSource: context.weatherSource,
-      weatherTags: context.weatherTags,
-      weatherDetail: context.weatherDetail,
-      mood: context.mood,
-      intensity: context.intensity,
-      planText: context.planText,
-      scheduleTags: context.scheduleTags
-    },
-    listenerTaste: {
-      currentLean: profile.currentLean,
-      anchors: profile.tasteAnchors,
-      nightPreference: profile.timePreferences?.[context.now.dayPart] || null
-    }
-  });
-}
-
-async function generateAiDjTranscript(payload) {
-  if (!openAiConfigured() || !payload.current) return null;
-  const key = djScriptCacheKey(payload);
-  if (djScriptCache.has(key)) return djScriptCache.get(key);
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
-  try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: OPENAI_MODEL,
-        reasoning: { effort: "low" },
-        instructions: [
-          "你是 RadioX，一个只服务一位听众的 24 小时私人电台 DJ。",
-          "听众是熟悉的朋友，但不要频繁称呼对方，不要每段开头都说“老朋友”。默认直接接话；只有在特别需要拉近距离时才偶尔称呼一次。",
-          "语气要像夜里开车、饭后散步、旧友叙旧：自然、松弛、具体、不过度煽情。",
-          "任务：先介绍歌曲，再深挖提供的歌曲故事或乐队/歌手线索，最后说明旋律、能量、配器或时代气质为什么切合听众今天的状态。",
-          "故事要有纵深：从 storySeed 里展开创作背景、乐队处境、主唱气质、录音/现场感或时代情绪；如果资料很少，就明确围绕已给线索展开，不要编造新事实。",
-          "切合状态的分析要更像真正 DJ 的长段落：说出声音怎么影响身体、注意力、疲劳、白天的计划余波，而不是只给一句泛泛的适合。",
-          "只能基于输入里的 storySeed 和 recommendationReason 讲事实；不要编造新事实，不要引用歌词，不要提 OpenAI、AI、算法或 prompt。",
-          "禁止使用天气压迫、空间透气、呼吸落地、卡在缝隙、接住状态、低处的东西照清楚这类抽象套话。要说具体声音、配器、节奏、歌手故事。",
-          "只介绍 currentTrack，不要预告下一首或上一首。禁止说“听完它”“听完这首”“顺着情绪走进”“我们接着走进”。",
-          "可以参考 dayContext 理解听众状态，但不要逐字复述 planText，不要说“想着你今天这件事”。",
-          "不要用百分比描述能量，不要说“不吵，但会把你带起来”，不要说“第一句自己开门”。",
-          "不要反复使用固定称呼或固定开场，比如“老朋友”。",
-          "不要重复具体时间。不要写 Markdown。不要使用列表。",
-          "返回 JSON object，字段必须是 intro、story、fit、segue。",
-          "长度：intro 40-90 中文字符；story 140-240 中文字符；fit 130-230 中文字符；segue 60-120 中文字符。segue 只收束当前正在播放的歌，不要转到下一首。"
-        ].join("\n"),
-        input: buildDjPrompt(payload),
-        max_output_tokens: 1600
-      })
-    });
-
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      console.warn("OpenAI DJ failed", response.status, body.error?.message || response.statusText);
-      return null;
-    }
-
-    const script = parseDjJson(extractOpenAiText(body));
-    const transcript = aiScriptToTranscript(script, payload.profile);
-    if (transcript.length < 2) return null;
-    rememberCachedDjScript(key, transcript);
-    return transcript;
-  } catch (error) {
-    console.warn("OpenAI DJ fallback", error.message);
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 function fallbackDjChatReply(payload, userText) {
@@ -1686,21 +1838,6 @@ async function generateDjChatReply(payload, userText, history) {
   }
 }
 
-async function stationPayloadWithDj(options = {}) {
-  const payload = stationPayload(options);
-  payload.aiDj = {
-    configured: openAiConfigured(),
-    source: "local",
-    model: openAiConfigured() ? OPENAI_MODEL : null
-  };
-  const transcript = await generateAiDjTranscript(payload);
-  if (transcript) {
-    payload.transcript = transcript;
-    payload.aiDj.source = "openai";
-  }
-  return payload;
-}
-
 function stationPayload(options = {}) {
   const profile = readJson("profile.json");
   const routines = readJson("routines.json");
@@ -1746,8 +1883,6 @@ function stationPayload(options = {}) {
   const rawIndex = queueState.stale ? 0 : Number(state.currentIndex || 0);
   const currentIndex = clamp(rawIndex, 0, Math.max(queue.length - 1, 0));
   const current = queue[currentIndex] || queue[0];
-  const transcript = current ? makeDjScript(current, context, profile) : [];
-
   return {
     station: {
       name: profile.stationName,
@@ -1760,7 +1895,6 @@ function stationPayload(options = {}) {
     context,
     current,
     queue,
-    transcript,
     state: {
       playing: Boolean(state.playing),
       currentIndex,
@@ -2080,6 +2214,52 @@ async function handleApi(req, res, url) {
     return true;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/world/catalog") {
+    try {
+      sendJson(res, 200, worldCatalogPayload());
+    } catch (error) {
+      console.warn("World catalog read failed", error.message);
+      sendJson(res, 500, { error: error.message });
+    }
+    return true;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/world/sync-preview") {
+    try {
+      const body = await parseBody(req);
+      const source = body.source ? normalizeWorldSource(body.source) : null;
+      const candidates = Array.isArray(body.candidates) ? body.candidates : [];
+      const imported = upsertPendingWorldCandidates(candidates, source);
+      sendJson(res, 200, worldCatalogPayload({
+        preview: {
+          mode: "local-review",
+          imported: imported.length,
+          message: imported.length
+            ? "Candidates were added to the local review queue."
+            : "No external fetch was performed. Configure a provider or submit candidates for review.",
+          providers: providerStatus()
+        }
+      }));
+    } catch (error) {
+      console.warn("World sync preview failed", error.message);
+      sendJson(res, 400, { error: error.message });
+    }
+    return true;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/world/approve") {
+    try {
+      const body = await parseBody(req);
+      const action = body.action === "reject" ? "reject" : "approve";
+      const result = reviewWorldCandidate(body.id, action, body.item || null);
+      sendJson(res, 200, worldCatalogPayload({ review: result }));
+    } catch (error) {
+      console.warn("World approval failed", error.message);
+      sendJson(res, 400, { error: error.message });
+    }
+    return true;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/profile") {
     sendJson(res, 200, readJson("profile.json"));
     return true;
@@ -2117,6 +2297,50 @@ async function handleApi(req, res, url) {
       console.warn("Cloud TTS failed", error.message);
       sendJson(res, error.statusCode || 502, { error: error.message });
     }
+    return true;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/queue-track") {
+    const body = await parseBody(req);
+    const basePayload = stationPayload({ persistQueue: true });
+    const state = readJson("state.json");
+    const track = normalizeCustomTrack({
+      ...(body.track || {}),
+      requestedAt: new Date().toISOString()
+    });
+
+    if (!track) {
+      sendJson(res, 400, { error: "Track is required" });
+      return true;
+    }
+
+    const queueUpdate = applyChatQueueRequests(state, basePayload, [track]);
+    if (queueUpdate.changed) writeJson("state.json", queueUpdate.state);
+
+    let payload = stationPayload({ persistQueue: true });
+    const targetIndex = payload.queue.findIndex((item) => item.id === track.id);
+    if ((body.play === true || body.play === "true") && targetIndex >= 0) {
+      const latest = readJson("state.json");
+      writeJson("state.json", {
+        ...latest,
+        currentIndex: targetIndex,
+        playing: true,
+        queueDate: localDateKey(),
+        queueSignature: payload.state.queueSignature,
+        queueOrder: payload.state.queueOrder,
+        updatedAt: new Date().toISOString()
+      });
+      payload = stationPayload({ persistQueue: true });
+    }
+
+    sendJson(res, 200, {
+      ...payload,
+      queuedTracks: [{
+        id: track.id,
+        title: track.title,
+        artist: track.artist
+      }]
+    });
     return true;
   }
 
@@ -2165,7 +2389,7 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === "GET" && url.pathname === "/api/now") {
-    sendJson(res, 200, await stationPayloadWithDj({ persistQueue: true }));
+    sendJson(res, 200, stationPayload({ persistQueue: true }));
     return true;
   }
 
@@ -2333,7 +2557,7 @@ async function handleApi(req, res, url) {
       queueOrder: [],
       updatedAt: new Date().toISOString()
     });
-    sendJson(res, 200, await stationPayloadWithDj({ persistQueue: true }));
+    sendJson(res, 200, stationPayload({ persistQueue: true }));
     return true;
   }
 

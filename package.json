@@ -6,7 +6,11 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server/index.js",
-    "dev": "node server/index.js"
+    "dev": "node server/index.js",
+    "check": "node --check public/app.js && node --check public/world-bands.js && node --check public/world-tours.js && node --check server/index.js && node --check scripts/smoke-test.js && npm run validate:world",
+    "smoke": "node scripts/smoke-test.js",
+    "test": "npm run check",
+    "validate:world": "node scripts/validate-world-data.js"
   },
   "engines": {
     "node": ">=18"
